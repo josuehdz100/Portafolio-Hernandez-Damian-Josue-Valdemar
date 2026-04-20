@@ -1,0 +1,460 @@
+---
+title: "T1-Exploración y Bondad de Ajuste de Distribuciones en Datos de Riesgo"
+author: "Hernandez Damian Josue Valdemar"
+date: ""
+output:
+  pdf_document:
+    latex_engine: pdflatex
+  html_document:
+    df_print: paged
+  word_document: default
+geometry: margin=1.5cm
+urlcolor: blue
+header-includes:
+- \usepackage[utf8]{inputenc}
+- \DeclareUnicodeCharacter{0301}{\'{}}
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Base de datos: Indice S&P 500 de 2019-01-01 al 2024-12-31
+
+Se escogio el S&P 500, porque el índice Standard & Poor's 500 Index
+(S&P 500), es uno de los índices bursátiles más importantes de Estados
+Unidos. Al S&P 500 se le considera el índice más representativo de la
+situación real del mercado.​ El índice se basa en la capitalización
+bursátil de 500 grandes empresas que poseen acciones que cotizan en las
+bolsas NYSE o NASDAQ, y captura aproximadamente el 80 % de toda la
+capitalización de mercado en Estados Unidos.
+
+Como es un indice muy importante, es necesario conocer que tan riesgoso
+es para invertir. Puede haber un riesgo de mercado si el mercado
+bursatil cae como en la pandemia, tambien existe posibilidad de riego de
+volatilidad porque el indice puede fluctuar debido a ciclos economicos y
+eventos inesperados.
+
+Se trabajara con los redimientos diarios continuos del indice S&P 500 de
+5 años, que se calculan como $log(\frac{P_{t}}{P_{t-1}})$. Los datos los
+vamos a obtener por Yahoo Finance.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+#install.packages(c("quantmod", "fitdistrplus", "ggplot2", "MASS", "VGAM"))
+
+library(quantmod)       # Para descargar datos financieros
+library(fitdistrplus)   # Ajuste de distribuciones
+library(ggplot2)        # Gráficas
+library(MASS)           # Ajuste Normal y t
+library(VGAM)           # Para Laplace
+library(nortest)   # Anderson-Darling test
+library(gridExtra) # Para organizar paneles
+library(goftest) 
+# Descargar datos del S&P 500 por Yahoo Finance
+getSymbols("^GSPC", src = "yahoo", from = "2019-01-01", to = "2024-12-31")
+prices <- Cl(GSPC)
+returns <- diff(log(prices))[-1]  # Rendimientos logarítmicos
+data <- as.numeric(returns)
+
+# Mantener solo los valores finitos (elimina NA, NaN, Inf)
+data<- data[is.finite(data)]
+
+
+```
+
+## Analisis de graficas
+
+Se exploraran el histograma de los rendimientos continuos y el Boxplot.
+
+Notamos en el histograma que existe una mayor concentración de los datos
+alrededor de los valores -0.5 y 0.5, lo que indica que la mayoría de los
+rendimientos se acumulan cerca del centro. Sin embargo, también se
+observan valores extremos hacia los lados del histograma, lo que
+significa que la distribución presenta colas más largas, es decir
+posibles eventos extremos o atípicos.
+
+En el Boxplot, se aprecia que dentro de la caja la mediana se encuentra
+cercana al 0, lo cual coincide con la concentración central observada en
+el histograma y se observan muchos valores fuera de los bigotes
+(outliers), por lo que puede indicar que los datos tienen una
+distribución con colas pesadas.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+# Histograma
+ggplot(data.frame(x=data), aes(x)) +
+  geom_histogram(aes(y=..density..), bins=50, fill="skyblue", color="black") +
+  geom_density(color="red", size=1) +
+  labs(title="Histograma de rendimientos del S&P 500", x="Rendimiento", y="Densidad") +
+  theme_minimal()
+
+
+
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+#boxplot
+ggplot(data.frame(x=data), aes(y=x)) +
+  geom_boxplot(fill="orange", color="black") +
+  labs(title="Boxplot de rendimientos del S&P 500", y="Rendimiento")
+```
+
+Con lo anterior, es importante buscar distribuciones que este definifa
+en todos los reales, porque los rendimientos financieros pueden ser
+pérdidas (negativos) o ganancias (positivos). Para empezar la Normal, la
+t-Student y la Laplace (doble exponencial) estan definidas en todo R.
+
+La distribución normal modela datos concentrados alrededor de la media
+(como lo mostradado en el Boxplot) y tiene colas delgadas. La t-Student
+es simetrica, centrada en 0 y puede tener colas más pesadas que la
+normal para explicar los valores extremos. La laplace tambien es
+simetrica, con media 0 y tiene colas mas pesada que la normal.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+descdist(data, discrete = FALSE, boot = 500)
+```
+
+Ahora graficamos Cullen & Frey, en esta observamos que la mediana
+(0.00092) y media (0.00057) están muy cercanas a cero, entonces los
+rendimientos tienen un comportamiento centrado, sin sesgo fuerte hacia
+ganancias o pérdidas.
+
+El skewness (-0.85) es n egativo y significa que la cola izquierda es
+más pesada que la derecha, es decir , las pérdidas extremas son más
+probables que las ganancias extremas.La kurtosis (18.26) es muy alta en
+comparación con una normal (kurtosis aproximada de 3), entonces implica
+colas muy pesadas y una concentración fuerte de datos alrededor de la
+media.
+
+Con skewness negativo y kurtosis muy alto, los datos son consistentes
+con distribuciones de colas pesadas , en esta ocacion tomaremos la
+t-Student con pocos grados de libertad o Laplace. Además consideramos la
+normal para ver si se ajusta.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+df <- data.frame(x = data)
+
+# Parámetros para t-student
+t_df <- 3
+
+# QQ-plots
+
+# Normal
+p_qqnorm <- ggplot(df, aes(sample = x)) +
+  stat_qq() +
+  stat_qq_line(color="red") +
+  labs(title="QQ-plot vs Normal")
+
+# t-student
+p_qqt <- ggplot(df, aes(sample = x)) +
+  stat_qq(distribution = qt, dparams = t_df) +
+  stat_qq_line(distribution = qt, dparams = t_df, color="red") +
+  labs(title=paste("QQ-plot vs t-student (df=", t_df, ")", sep=""))
+
+#Laplace
+p_qqlap <- ggplot(df, aes(sample = x)) +
+  stat_qq(distribution = qlaplace) +
+  stat_qq_line(distribution = qlaplace, color="red") +
+  labs(title="QQ-plot vs Laplace")
+
+# Mostrar todos los QQ-plots
+grid.arrange(p_qqnorm, p_qqt, p_qqlap)
+
+
+```
+
+Ya graficamos el QQ-plot, este compara los cuantiles de los datos con
+los cuantiles de una distribución teorica.
+
+En el caso de la normal, los puntos se alinean en el centro, pero se
+desvian fuertemente en las colas hacia arriba y abajo, por lo que la
+distribución normal tiene cola más delgada que los datos.
+
+La t-Student tiene mejor el ajuste porque los puntos siguen la recta en
+el centro y gran parte de las colas, solo en extremos más lejanos se
+observa ligera desviacion, entonces la t-Student modela mejor las colas
+pesada de los datos.
+
+La Laplace tiene un buen ajuste en el centro, pero en las colas tiene
+cierta desviación, esto se debe que la Laplace tiene colas más pesadas
+que la t-Students.
+
+## **Pruebas de bondas de ajuste con p-values y AIC**
+
+Ahora hay que estimar los parametros, realizar pruebas de bondas de
+ajuste y AIC.
+
+Para estimar los parametros de la normal se uso la función fitdist para
+ajustar una normal a los datos por maxima verosimilitud. Para la
+t-Student fijamos los grados de libertad en dt=3 para colas pesadas y
+tambien usamos fitdistr para ajustar la distribucion t a los datos.
+
+Como no hay función en R para ajustar Laplace con fitdist, entonces se
+estimo el parametro de localicación como la mediana de los datos y el
+parametro de escaa se estimo como el promedio de las desviaciones
+absolutas respecto a la mediana.
+
+Para evaluar cada modelo, usaremos el **AIC (Akaike Information
+Criterior)** que se usa para comparar modelos estadisics y elegeir cual
+se ajusta mejor. Un AIC mas bajo indica un mejor modelo, porque logra un
+buen ajuste sin demasiada complejidad.
+
+El **test de Kolmogorov-Smirnov (KS)** compara la distribución de tus
+datos con una distribución teórica. La Hipótesis nula: Los datos siguen
+la distribución teórica vs. Hipótesis alternativa: Los datos no siguen
+la distribución teórica.Interpretación del p-value:
+
+Si p-value\>0.05 No hay evidencia para rechazar el hipotesis nula, los
+datos pueden seguir a distribución.
+
+Si p\<0.05 entonces rechazmos la hipotesis nula y los datos no siguen la
+distribucion.
+
+El **test de Anderson-Darling (AD)** ambién verifica si los datos siguen
+una distribución teórica, pero es más sensible a las colas de la
+distribución, donde la Hipotesis nula: Los datos siguen la distribución
+
+Si p\>0.05 entonces no se rechaza la hipotesis nula, es decir es un buen
+ajuste y
+
+Si p\<0.05 entonces rechazamos la hipotesis nula, es decir es un mal
+ajuste.
+
+La prueba de **Cramér-von Mises (CvM)** es muy parecida a la de
+Kolmogorov-Smirnov (KS) y la de Anderson-Darling (AD). Tenemos de
+hipotesis:
+
+Hipótesis nula: los datos provienen de la distribución especificada vs.
+Hipótesis alternativa: los datos no provienen de esa distribución.
+
+Si p-value\> 0.05, entonces no se rechaza la hipotesis nula,es decir los
+datos son compatibles con la distribución propuesta
+
+Si el p-value \< 0.05, entonces se rechaza la hipotesis nula que indica
+que la distribución propuesta no describe bien los datos.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+data_clean <- data[is.finite(data)]
+
+# 1. Normal
+fit_norm <- fitdist(data_clean, "norm")
+cat("DISTRIBUCION NORMAL:\n")
+cat("  Media:", fit_norm$estimate["mean"], "\n")
+cat("  Desviación estándar:", fit_norm$estimate["sd"], "\n")
+
+# AIC
+gof_norm <- gofstat(fit_norm)
+cat("  AIC:", gof_norm$aic, "\n")
+
+# KS test
+ks_norm <- ks.test(data_clean, "pnorm", 
+                   mean=fit_norm$estimate["mean"], 
+                   sd=fit_norm$estimate["sd"])
+cat("  KS p-value:", ks_norm$p.value, "\n")
+
+# AD test
+ad_norm <- ad.test((data_clean - fit_norm$estimate["mean"]) / fit_norm$estimate["sd"]) #normalizar los datos
+cat("  AD p-value:", ad_norm$p.value, "\n\n")
+
+# --- Cramér-von Mises test ---
+cvm_norm <- cvm.test(data_clean, null="pnorm",
+                     mean=fit_norm$estimate["mean"],
+                     sd=fit_norm$estimate["sd"])
+cat("  CvM p-value:", cvm_norm$p.value, "\n\n")
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+#t-Student (df fijo)
+t_df <- 3
+fit_t <- fitdistr(data_clean, "t", df=t_df)
+cat("DISTRIBUCION t-Student (df =", t_df, "):\n")
+cat("  Media (location):", fit_t$estimate["m"], "\n")
+cat("  Escala (sd):", fit_t$estimate["s"], "\n")
+
+# AIC manual
+loglik_t <- sum(log(dt((data_clean - fit_t$estimate["m"]) / fit_t$estimate["s"], df=t_df)/
+                     fit_t$estimate["s"]))
+AIC_t <- 2*length(fit_t$estimate) - 2*loglik_t
+cat("  AIC:", AIC_t, "\n")
+
+# KS test
+t_cdf <- function(x) pt((x - fit_t$estimate["m"])/fit_t$estimate["s"], df=t_df)
+ks_t <- ks.test(data_clean, t_cdf)
+cat("  KS p-value:", ks_t$p.value, "\n")
+
+# AD test (transformando a U[0,1])
+ad_t <- ad.test(t_cdf(data_clean))
+cat("  AD p-value:", ad_t$p.value, "\n\n")
+
+# --- Cramér–von Mises test ---
+cvm_t <- cvm.test(data_clean, null = t_cdf)
+cat("  CvM p-value:", cvm_t$p.value, "\n\n")
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+# Laplace (doble exponencial)
+loc <- median(data_clean)
+scale <- mean(abs(data_clean - loc))
+cat(" DISTRIBUCION Laplace (estimación manual):\n")
+cat("  Location:", loc, "\n")
+cat("  Scale:", scale, "\n")
+
+# AIC manual
+lap_density <- function(x) (1/(2*scale)) * exp(-abs(x - loc)/scale)
+loglik_lap <- sum(log(lap_density(data_clean)))
+AIC_lap <- 2*2 - 2*loglik_lap
+cat("  AIC:", AIC_lap, "\n")
+
+# KS test
+lap_cdf <- function(x) {
+  ifelse(x < loc, 0.5*exp((x-loc)/scale), 1 - 0.5*exp(-(x-loc)/scale))
+}
+ks_lap <- ks.test(data_clean, lap_cdf)
+cat("  KS p-value:", ks_lap$p.value, "\n")
+
+# AD test
+ad_lap <- ad.test(lap_cdf(data_clean))
+cat("  AD p-value:", ad_lap$p.value, "\n")
+
+# --- Cramér–von Mises test ---
+cvm_lap <- cvm.test(data_clean, null = lap_cdf)
+cat("  CvM p-value:", cvm_lap$p.value, "\n\n")
+```
+
+En resumen lo obtenido es:
+
+|  |  |  |  |  |  |
+|----|----|----|----|----|----|
+| **Distribucion** | **parametros** | **p-value KS** | **p-value AD** | **p-value CvM** | **AIC** |
+| **Normal** | $\mu= 0.0005675$, $\sigma= 0.01273$ | $1.096757e-12$ | $3.7e-24$ | $0$ | $-8876.74$ |
+| **t-Student** | $t= 3$ | $0.7682517$ | $3.7e-24$ | $0.5858502$ | $-9386.64$ |
+| **Laplace** | $\mu= 0.00092364$ (localización),$b= 0.0082809$ (escala) | $0.2950262$ | $3.7e-24$ | $0.5663874$ | $-9347.56$ |
+
+Notamos que el AIC de la t-student es el más pequeño, esto indica que es
+el modelo que mejor se ajusta al modelo. Además que su p-value de KS es
+mayor a 0.05, entonces no rechzamos la hipotesis nula y los datos si
+podrian venir de una t-Student con df=3.
+
+El modelo Laplace tiene un AIC no es tan grande y no tan pequeño a
+comparación de los otros modelos, además que tambien el p-value de KS es
+mayor a 0.05 entonces no rechazamos la hipotesis nula y los datos si
+podrian ajustarse a esa distribución.
+
+En la prueba CvM, la t-student y la Laplace, su p-value es mayor a 0.05,
+es decir que los datos son compatibles con la dististribucion propuesta.
+
+En el modelo de la Normal, el p-value en las tres pruebas de KS , AD y
+CvM es menor a 0.05, entonces rechazamos la hipotesis nula de que los
+datos se pueden ajustar de una normal y su AIC es el más grande, esto
+refleja que es un peor ajuste a comparacion con los otros modelos.
+
+Notamos que en los 3 modelos, el p-value de AD son menores a 0.05,
+entonces esto quiere decir que todavia hay información de las colas
+extremas que estos modelos no pueden rescatar.
+
+## Conclusion
+
+Las hipótesis iniciales planteaba que los datos podrían ajustarse a
+distribuciones como la Normal, t-Student o Laplace, porque considere la
+posible presencia de colas pesadas y valores de los rendimientos reales
+y positivo.
+
+Los resultados muestran que la t-Student (df=3) es el modelo que mejor
+se ajusta, con AIC más bajo y p-value del KS, de AD y CvM son menores a
+0.05, confirmando que los datos podrían provenir de esta distribución.
+La Laplace también es razonable, aunque con ajuste ligeramente inferior.
+En cambio, la Normal no es adecuada, pues sus p-values de KS , AD y CvM
+son menores a 0.05 y su AIC es el más alto.
+
+Sin embargo, los p-values del test AD en todos los modelos \< 0.05
+indican que ninguno captura completamente las colas extremas, sugiriendo
+que podría ser necesario considerar distribuciones con colas más pesadas
+para un ajuste completo.
+
+Al graficar la función de distribución empírica y las funciones de
+distribución estimadas, así como la densidad estimada sobre el
+histograma, se observa que la t-Student y la Laplace se ajustan mejor
+que la Normal, confirmando visualmente los resultados estadísticos.
+
+En resumen, las hipótesis fueron parcialmente congruentes: la t-Student
+y Laplace reflejan correctamente la tendencia general, pero las colas
+extremas requieren modelos más específicos. La normal no refleja el
+comportamiento de los datos, entonces lo mejor es buscar más
+distribuciones que se ajusten mejor.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+data_clean <- data[is.finite(data)]
+
+# Normal
+fit_norm <- fitdist(data_clean, "norm")
+
+# t-Student (df fijo)
+t_df <- 3
+fit_t <- fitdistr(data_clean, "t", df = t_df)
+
+# Laplace (manual)
+loc <- median(data_clean)
+scale <- mean(abs(data_clean - loc))
+
+##Graficar
+# Secuencia para graficar
+x_seq <- seq(min(data_clean), max(data_clean), length.out = 500)
+
+# CDF teóricas
+cdf_norm <- pnorm(x_seq, mean=fit_norm$estimate["mean"], sd=fit_norm$estimate["sd"])
+cdf_t    <- pt((x_seq - fit_t$estimate["m"]) / fit_t$estimate["s"], df=t_df)
+cdf_lap  <- ifelse(x_seq < loc, 
+                   0.5 * exp((x_seq - loc) / scale),
+                   1 - 0.5 * exp(-(x_seq - loc) / scale))
+
+#Plot
+plot(ecdf(data_clean), col="black", lwd=2, main="Función de distribución empírica vs ajustes",
+     xlab="Rendimientos", ylab="F(x)")
+
+lines(x_seq, cdf_norm, col="blue", lwd=2, lty=2)
+lines(x_seq, cdf_t, col="red", lwd=2, lty=3)
+lines(x_seq, cdf_lap, col="green", lwd=2, lty=4)
+
+legend("topleft", legend=c("ECDF (datos)", "Normal", paste0("t-Student (df=",t_df,")"), "Laplace"),
+       col=c("black", "blue", "red", "green"), lwd=2, lty=c(1,2,3,4), bty="n")
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+# Ajustes
+fit_norm <- fitdist(data_clean, "norm")
+t_df <- 3
+fit_t <- fitdistr(data_clean, "t", df=t_df)
+loc <- median(data_clean)
+scale <- mean(abs(data_clean - loc))
+
+# Secuencia para graficar densidades
+x_seq <- seq(min(data_clean), max(data_clean), length.out=500)
+
+# Densidades teóricas
+dens_norm <- dnorm(x_seq, mean=fit_norm$estimate["mean"], sd=fit_norm$estimate["sd"])
+dens_t    <- dt((x_seq - fit_t$estimate["m"]) / fit_t$estimate["s"], df=t_df) / fit_t$estimate["s"]
+dens_lap  <- ifelse(x_seq < loc,
+                    (1/(2*scale)) * exp((x_seq - loc)/scale),
+                    (1/(2*scale)) * exp(-(x_seq - loc)/scale))
+
+# Histograma con densidad
+hist(data_clean, breaks=50, probability=TRUE, col="lightgray", border="white",
+     main="Histograma con densidades ajustadas", xlab="Rendimientos")
+
+# Añadir densidades ajustadas
+lines(x_seq, dens_norm, col="blue", lwd=2, lty=2)
+lines(x_seq, dens_t, col="red", lwd=2, lty=3)
+lines(x_seq, dens_lap, col="green", lwd=2, lty=4)
+
+legend("topright", legend=c("Normal", paste0("t-Student (df=",t_df,")"), "Laplace"),
+       col=c("blue","red","green"), lwd=2, lty=c(2,3,4), bty="n")
+
+```
