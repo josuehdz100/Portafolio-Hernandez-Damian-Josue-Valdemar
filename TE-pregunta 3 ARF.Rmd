@@ -1,0 +1,650 @@
+---
+title: ""
+author: ""
+date: ""
+output:
+  pdf_document:
+    latex_engine: xelatex
+fontsize: 11pt
+geometry: margin=1.5 cm
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,      # Oculta el código
+  message = FALSE,   # Oculta mensajes
+  warning = FALSE,   # Oculta advertencias
+  error = TRUE,
+  fig.show = "asis",
+  #out.width = "55%",
+  #fig.dim = c(4, 3),
+  fig.align = "center"  
+)
+```
+
+# HERNANDEZ DAMIAN JOSUE VALDEMAR
+
+# Datos de los precios de las acciones
+
+La **NASDAQ (National Association of Securities Dealers Automated Quotations)** es una de las principales bolsas de valores a nivel mundial y la primera en operar de forma completamente electrónica. Fundada en 1971 en Estados Unidos, se caracteriza por concentrar empresas vinculadas a la innovación tecnologica, biotecnologia y servicios digitales, y por ofrecer un sistema de negociacion agil y transparente.
+
+En este analisis se consideran cuatro empresas del sector salud y biotecnologia que cotizan en la NASDAQ: **Amgen Inc. (AMGN)**, dedicada al desarrollo de medicamentos biotecnologicos; **Gilead Sciences, Inc. (GILD)**, enfocada en terapias antivirales; **Biogen Inc. (BIIB)**, especializada en tratamientos para enfermedades neurologicas; y **Vertex Pharmaceuticals Inc. (VRTX)**, reconocida por sus avances en el tratamiento de enfermedades geneticas como la fibrosis quistica.
+
+Se usaran los datos de los precios de cierre ajustado del $01/01/2020$ al $07/11/2025$.
+
+El periodo del $01/01/2020$ al $07/11/2025$ abarca eventos relevantes del mercado financiero global, como la pandemia de COVID-19 $(2020)$, la recuperación económica $(2021–2022)$, el incremento de tasas de interés por parte de la Reserva Federal $(2022–2024)$ y la posterior estabilización de los mercados.\
+Estos eventos influyeron significativamente en la volatilidad de las acciones del sector salud y biotecnología.
+
+```{r}
+# Librerías
+library(quantmod)
+library(mvtnorm)
+
+# Descargar precios 
+tickers <- c("AMGN", "GILD", "BIIB", "VRTX")
+
+# precios de cierre ajustados
+prices <- list()
+returns <- list()
+
+for (t in tickers) {
+  P <- getSymbols(t, from = "2020-01-01", to = "2025-11-07", auto.assign = FALSE)
+  close_price <- Cl(P)
+  prices[[t]] <- close_price
+  returns[[t]] <- ROC(close_price)[-1]
+}
+
+# agrupar todos en un dataframe
+X <- na.omit(do.call(merge, returns))
+colnames(X) <- tickers
+#X
+
+#Media y matriz var-cov de los rendimientos
+mu_X <- colMeans(X)
+#mu_X
+sigma_X <- cov(X)
+#sigma_X
+
+```
+
+# Calculo del VaR y TVar de un portafolio uniforme
+
+Se considera que se va a invertir la misma cantidad de capital en todas las acciones, es decir, el $25\%$ a cada uno de las cuatro acciones. Se considera un capital de $\$ 1,000,000$ de unidades monetarias.
+
+Se va a considerar un nivel de confianza de $\alpha = 0.95$ y recordemos que:
+
+Sea $L$ el portafolio de perdidas, definimos el como $VaR_{\alpha} (L) = inf\{ x\in \mathbb{R} | F_{L}(x) \geq \alpha\}$ y el $TVaR_{\alpha} = \mathbb{E}(L | L \geq VaR_{\alpha}(L))$
+
+Podemos decir que mientras el $VaR$ mide un umbral máximo de pérdida bajo condiciones normales, el $TVaR$ evalúa la **magnitud promedio de las pérdidas extremas** que superan ese umbral (el $VarR$).
+
+## Metodo Varianza-Covarianzas
+
+Se supone que los rendimientos logaritmicos de las acciones siguen una distribución normal multivariada con vector de medias $\mu_{X}$ y matriz de covarianzas $\sum_{X}$
+
+```{r}
+# Pesos del portafolio
+w<- c(0.25, 0.25, 0.25, 0.25)  # pesos iguales
+capital<- 1000000
+a<- capital*w
+
+# Media y varianza del portafolio
+mu_L <- as.numeric(t(a) %*% mu_X)
+var_L <- as.numeric(t(a) %*% sigma_X %*% a)
+sigma_L <- sqrt(var_L)
+
+# Nivel de confianza
+alpha <- 0.95
+
+# VaR
+VaR <- (mu_L + qnorm(alpha) * sigma_L)
+
+# TVaR
+TVaR <- (mu_L + (dnorm(qnorm(alpha)) / (1 - alpha)) * sigma_L)
+
+# Mostrar resultados
+cat("Media del portafolio:", mu_L, "\n")
+cat("Desviación estándar del portafolio:", sqrt(sigma_L), "\n")
+cat("VaR (95%):", VaR, "\n")
+cat("TVaR (95%):", TVaR, "\n")
+
+```
+
+El $VaR$ al $95 \%$ indica que, con una confianza del $95 \%$, la pérdida del portafolio no superará los $\$ 24,563.26$ unidades monetarias en un horizonte de un dia. En decir, solo en el $5 \%$ de los escenarios más adversos se espera que las pérdidas sean mayores a dicha cantidad.
+
+El $TVaR$ al $95 \%$ complementa al $VaR$ al evaluar la magnitud promedio de las pérdidas que exceden el $VaR$. En este caso, el valor del $TVaR$ es de $\$ 30,763.52$ y representa la pérdida media esperada en el $5 \%$ de los peores escenarios si se llegara a presentar una pérdida mayor al $VaR$.
+
+## Metodo Monte-Carlo
+
+En este caso, con los valores de los log-rendimientos se supuso que siguen un comportamiento normal multivariado y se generaron $100,000$ escenarios simulados de posibles comportamientos del portafolio.
+
+```{r}
+# asignacion de capital
+w <- c(0.25, 0.25, 0.25, 0.25)
+capital <- 1000000
+a <-capital*w
+
+#Número de simulaciones
+n <- 100000
+
+# Suponer una Normal Multivariada
+set.seed(123)
+X_sim <- rmvnorm(n, mean = mu_X, sigma = sigma_X)
+
+# Calcular el portafolio
+L <- numeric(n)
+V_inicial <- sum(a)
+
+for (i in 1:n) {
+  V_final <- sum(a * exp(X_sim[i, ]))
+  L[i] <- V_inicial - V_final
+}
+
+# graficas: histograma
+#par(mfrow=c(1,2))
+#plot(L, main="Serie de pérdidas con supuesto de normalidad multivariada", col="steelblue")
+#hist(L, breaks=50, main="Histograma de pérdidas", col="lightblue", border="white")
+
+
+# medidas de riesgo
+mean_loss <- mean(L)
+var_loss <- var(L)
+sd_loss <- sd(L)
+
+cat("Pérdida esperada:", mean_loss, "\n")
+cat("Varianza de pérdidas:", var_loss, "\n")
+cat("Desviación estándar:", sd_loss, "\n")
+
+# VaR 
+alpha <- 0.95
+VaR_95 <- quantile(L, alpha)
+
+# TVaR
+TVaR_95 <- mean(L[L >= VaR_95])
+
+cat("VaR al 95%:", VaR_95, "\n")
+cat("TVaR al 95%:", TVaR_95, "\n")
+```
+
+En los resultados indican que la pérdida esperada es de $–412.71$, lo que sugiere una ganancia. La desviación estándar fue de aproximadamente $14,845.01$.
+
+El $VaR$ al $95 \%$ se estimó en $23,791$, lo que implica que, bajo condiciones normales de mercado, existe un 5% de probabilidad de que las pérdidas superen dicho valor.
+
+Asimismo, el $TVaR$ al mismo nivel de confianza fue de $29,786.09$, representando la pérdida promedio esperada dentro de los peores escenarios si se llegara a presentar una perdida mayor al $VaR$.
+
+## **Metodo de Simulación historica**
+
+En este procedimiento se realizó una simulación histórica de pérdidas para estimar el riesgo asociado al portafolio a partir de los log-rendimientos historicos, se calculo la perdida total de la cartera en cada periodo y se calculo empiricamente las medidas de riesgo.
+
+```{r}
+# asignación de capital
+w <- c(0.25, 0.25, 0.25, 0.25)
+capital <- 1000000
+a <-capital*w
+
+#numero de datos
+n <- nrow(X)
+
+# Simulación histórica de pérdidas
+L <- numeric(n)
+V_inicial <- sum(a)
+
+for (i in 1:n) {
+  V_final <- sum(a * exp(as.numeric(X[i, ])))  
+  L[i] <- V_inicial - V_final                  
+}
+
+# Histograma de pérdidas
+#hist(L, breaks = 40, col = "skyblue", main = "Simulación Histórica de Pérdidas",
+    # xlab = "Pérdida", border = "white")
+
+# Medidas de riesgo
+alpha <- 0.95
+
+perdida_esperada <- mean(L)
+desv_estandar <- sd(L)
+
+VaR <- quantile(L, alpha)
+TVaR <- mean(L[L > VaR])
+
+cat("Pérdida esperada:", perdida_esperada, "\n")
+cat("Desviación estándar:", desv_estandar, "\n")
+
+cat("VaR al 95%:", VaR, "\n")
+cat("TVaR al 95%:", TVaR, "\n")
+```
+
+Los resultados obtenidos muestran que la pérdida esperada del portafolio es de $-371.50$ lo que indica que en promedio el portafolio presenta una ligera ganancia esperada (ya que el valor negativo). La desviación estándar de $15,035.29$ sugiere que las pérdidas o ganancias pueden fluctuar considerablemente alrededor de su media.
+
+El $VaR$ al $95\%$ es de $21,241.11$, lo que significa que con un $95\%$ de confianza, la pérdida no superará ese monto bajo condiciones normales de mercado. En otras palabras, solo en el $5\%$ de los escenarios más adversos se espera una pérdida mayor.
+
+El $TVaR$ al $95\%$ es de $31,915.26$, lo que representa la pérdida promedio esperada en aquellos casos extremos que superan el $VaR$.
+
+# **Back testing**
+
+El backtesting es una técnica utilizada para evaluar la precisión y fiabilidad de un modelo de riesgo, comparando sus predicciones con los resultados reales observados. En resumen, consiste en probar el modelo con datos históricos para verificar si las pérdidas reales que ocurrieron se comportan de acuerdo con lo que el modelo había estimado.
+
+El backtesting permite validar empíricamente la capacidad del modelo para predecir pérdidas extremas:
+
+-   Si el número de excepciones (días en que la pérdida real supera el $VaR$) es consistente con el nivel de confianza asumido, se considera que el modelo es estadísticamente adecuado.
+
+-   Por el contrario, una cantidad excesiva o insuficiente de excepciones sugiere que el modelo subestima o sobreestima el riesgo, respectivamente.
+
+Se considero una ventana móvil de $800$ dias y $200$ dias de comparacion.
+
+```{r}
+# Asignación de capital
+w <- c(0.25, 0.25, 0.25, 0.25)
+capital <- 1000000
+a <- capital * w                 
+
+# Rendimientos del portafolio
+R_port <- as.numeric(X %*% a)    # rendimientos a^T* X
+n <- length(R_port)
+
+# Parámetros 
+window <- 800     # tamaño de ventana histórica
+horizon <- 200    # días fuera de muestra (backtesting)
+alpha <- 0.95     # nivel de confianza 
+p <- 1 - alpha    # probabilidad esperada de excepción (5%)
+
+# vectores en blanco
+VaR_hist <- rep(NA, horizon)
+VaR_norm <- rep(NA, horizon)
+VaR_mc   <- rep(NA, horizon)
+Loss_real <- rep(NA, horizon)
+#para reproducibilidad
+set.seed(123)
+
+# Cálculo de VaR con ventana móvil
+for (i in 1:horizon) {
+  
+  # Datos de estimación 800 días previos
+  X_window <- X[i:(i + window - 1), ]
+  R_window <- as.numeric(X_window %*% a)
+  Loss_window <- -R_window   # pérdidas positivas
+  
+  # Observación fuera de muestra (día siguiente)
+  R_real <- as.numeric(X[i + window, ] %*% a)
+  Loss_real[i] <- -R_real
+  
+  # VaR simulacion histórica
+  VaR_hist[i] <- quantile(Loss_window, probs = alpha)   # cuantil
+  
+  # VaR  Varianza–Covarianza
+  mu <- mean(Loss_window)
+  sigma <- sd(Loss_window)
+  VaR_norm[i] <- mu + sigma * qnorm(alpha)     # duda
+  
+  # VaR Monte Carlo suponer Normal multivariada
+  mu_X <- colMeans(X_window)
+  sigma_X <- cov(X_window)
+  X_sim <- rmvnorm(100000, mean = mu_X, sigma = sigma_X)
+  R_sim <- X_sim %*% a
+  L_sim <- -R_sim                                       # pérdidas simuladas
+  VaR_mc[i] <- quantile(L_sim, probs = alpha)
+}
+
+# Resultados de backtesting
+results <- data.frame(
+  VaR_Historico = VaR_hist,
+  VaR_Normal = VaR_norm,
+  VaR_MonteCarlo = VaR_mc,
+  Pérdida_Real = Loss_real
+)
+
+# Número de violaciones PR> VaR
+Ex_hist <- sum(results$Pérdida_Real > results$VaR_Historico)
+Ex_norm <- sum(results$Pérdida_Real > results$VaR_Normal)
+Ex_mc   <- sum(results$Pérdida_Real > results$VaR_MonteCarlo)
+
+cat("E_x del M. Simulación Historica: ", Ex_hist, "\n")
+cat("E_x del M. Var-Cov: ", Ex_norm, "\n")
+cat("E_x del M. Monte-Carlo: ", Ex_mc, "\n")
+
+k <- horizon  # total de observaciones
+
+# Prueba Binomial de Kupiec
+cat("Prueba Binomial para el VaR \n")
+cat("Nivel de confianza:", alpha, "\n\n")
+
+cat("VaR con Simulacion Histórica:\n")
+print(binom.test(Ex_hist, k, p, alternative = "two.sided"))
+cat("\n VaR con Var-Cov :\n")
+print(binom.test(Ex_norm, k, p, alternative = "two.sided"))
+cat("\nVaR con Monte Carlo:\n")
+print(binom.test(Ex_mc, k, p, alternative = "two.sided"))
+```
+
+```{r, fig.width=10, fig.height=6, out.width="100%", fig.align="center"}
+par(xpd = TRUE, mar = c(5, 4, 4, 2) + 0.5)
+plot(results$Pérdida_Real, type = "l", col = "black",
+     main = "Backtesting del VaR (Ventana móvil de 800 días, α = 95%, portafolio uniforme)",
+     ylab = "Pérdida del portafolio", xlab = "Días fuera de muestra")
+lines(results$VaR_Historico, col = "blue", lwd = 1.5)
+lines(results$VaR_Normal, col = "red", lwd = 1.5)
+lines(results$VaR_MonteCarlo, col = "darkgreen", lwd = 1.5)
+
+legend("bottom", inset = c(0, -0.30), horiz = TRUE, bty = "n",
+       legend = c("Pérdida real", "VaR S.Histórica", "VaR Var-Cov", "VaR Monte Carlo"),
+       col = c("black", "blue", "red", "darkgreen"), lty = 1)
+
+```
+
+La gráfica presenta la comparación entre las pérdidas reales del portafolio (línea negra) y los niveles de riesgo estimados mediante tres métodos de cálculo del Valor en Riesgo $(VaR)$: Simulación Histórica (azul), Varianzas-Covarianzas (rojo) y Monte Carlo (verde). En el eje vertical se representan las pérdidas del portafolio, mientras que el eje horizontal muestra los días fuera de muestra empleados para evaluar el modelo.
+
+Se observa que la mayoría de las pérdidas reales se mantienen por debajo de los valores de $VaR$ estimados, lo cual es consistente con un nivel de confianza del $95\%$, donde solo un $5\%$ de los casos debería superar dicho umbral.
+
+Entre los tres métodos, el $VaR$ de Simulación Histórica y el $VaR$ Monte Carlo presentan comportamientos muy similares, mientras que el $VaR$ Var-Cov tiende a subestimar ligeramente el riesgo, ubicándose en valores inferiores a los otros dos métodos. Esto sugiere que el supuesto de normalidad no captura completamente la distribución empírica de las pérdidas del portafolio, especialmente en presencia de colas pesadas o asimetrías.
+
+# ¿Cuál es el mejor VaR?
+
+Se realizo una prueba $binom.test(X, k,p)$, donde $X=E_{K} = \sum_{i=1}^{k} \mathbf{1}_{ \{X_{n-k+1}> VaR_{n-k+1} \}}$, $k=200$ horizonte de tiempo y $p= 1-\alpha = 0.05$.
+
+El objetivo de esto es saber si el método es bueno debe de pasar que $E_{k} \sim Bin(k,p)$.
+
+La hipotesis nula es $H_{0}: p =1-\alpha$ , donde p es la probabilidad verdadera de que la perdida exceda el $VaR$. Además recordemos que si $p-value<0.05$ rechazamos $H_{0}$ y el modelo de $VaR$ no tiene la tasa de excepciones esperado.
+
+Ahora:
+
+| Método de VaR            | $E_{k}$ | p-value   |
+|--------------------------|---------|-----------|
+| **Var-Cov**              | $3$     | $0.02114$ |
+| **Monte-Carlo**          | $3$     | $0.02114$ |
+| **Simulación historica** | $4$     | $0.05025$ |
+
+Los resultados muestran que tanto el método Var-Cov como el método Monte-Carlo presentan $p-values$ de $0.02114$, lo que implica el rechazo de $H_{0}$​ porlo que al $5\%$ ambos métodos subestiman la tasa de excepciones observada.
+
+Como solo el métedo de Simulación Historica del $VaR$ tiene un $p-value$ mayor a $0.05$, entonces no rechazamos $H_{0}$ y decimos que hay suficiente evidencia estadistica con un nivel de confianza del $95\%$ que la tasa observada de excepciones no difiere estadisticamente de $0.05$.
+
+**Finalmente decimos que el mejor modelo con estas acciones y con un portafolio uniforme es el** $VaR$ **por simulación historica.**
+
+# **Portafolio con diferente asignación de capital.**
+
+Consideremos un capital de $1,000,000$ unidades monetarias asignado de la siguiente manera:
+
+| Empresa                                | Porcentaje de capital |
+|----------------------------------------|-----------------------|
+| **Amgen Inc. (AMGN)**                  | $30\%$                |
+| **Gilead Sciences, Inc. (GILD)**       | $12 \%$               |
+| **Biogen Inc. (BIIB)**                 | $13 \%$               |
+| **Vertex Pharmaceuticals Inc. (VRTX)** | $45\%$                |
+
+## Método Varianzas-Covarianzas
+
+```{r}
+# Pesos del portafolio
+w<- c(0.30, 0.12, 0.13, 0.45)  
+capital<- 1000000
+a<- capital*w
+
+# Media y varianza del portafolio
+mu_L <- as.numeric(t(a) %*% mu_X)
+var_L <- as.numeric(t(a) %*% sigma_X %*% a)
+sigma_L <- sqrt(var_L)
+
+# Nivel de confianza
+alpha <- 0.95
+
+# VaR
+VaR <- (mu_L + qnorm(alpha) * sigma_L)
+
+# TVaR
+TVaR <- (mu_L + (dnorm(qnorm(alpha)) / (1 - alpha)) * sigma_L)
+
+# Mostrar resultados
+cat("Media del portafolio:", mu_L, "\n")
+cat("Desviación estándar del portafolio:", sqrt(sigma_L), "\n")
+cat("VaR (95%):", VaR, "\n")
+cat("TVaR (95%):", TVaR, "\n")
+```
+
+El portafolio presenta una pérdida promedio de $421.2885$ unidades monetarias, lo cual refleja el nivel esperado de pérdida bajo condiciones normales del mercado.
+
+La desviación estándar de $112.5112$ indica que las pérdidas muestran una variabilidad moderada alrededor de su media, es decir que hay cierta volatilidad en el comportamiento del portafolio.
+
+Sin embargo, el el Valor en Riesgo al $95\%$ $(VaR)$ es de $21,243.11$, lo que implica que, con un nivel de confianza del $95\%$, la pérdida del portafolio no superará dicho valor, aunque existe un $5\%$ de probabilidad de excederlo.
+
+Más aún, el $TVaR$ al $95\%$ es de $26,532.69$, indicando que, en promedio, cuando se presentan escenarios que sobrepasan el $VaR$, las pérdidas alcanzan dicho valor.
+
+La diferencia significativa entre el $VaR$ y el $TVaR$ evidencia la presencia de riesgos de cola izquierda elevados, lo que sugiere que los eventos extremos pueden generar impactos financieros severos.
+
+## Método Monte-Carlo
+
+```{r}
+# Pesos del portafolio
+w<- c(0.30, 0.12, 0.13, 0.45) 
+capital<- 1000000
+a<- capital*w
+
+#Número de simulaciones
+n <- 100000
+
+# Suponer una Normal Multivariada
+set.seed(123)
+X_sim <- rmvnorm(n, mean = mu_X, sigma = sigma_X)
+
+# Calcular el portafolio
+L <- numeric(n)
+V_inicial <- sum(a)
+
+for (i in 1:n) {
+  V_final <- sum(a * exp(X_sim[i, ]))
+  L[i] <- V_inicial - V_final
+}
+
+# graficas: histograma
+#par(mfrow=c(1,2))
+#plot(L, main="Serie de pérdidas con supuesto de normalidad multivariada", col="steelblue")
+#hist(L, breaks=50, main="Histograma de pérdidas", col="lightblue", border="white")
+
+# medidas de riesgo
+mean_loss <- mean(L)
+var_loss <- var(L)
+sd_loss <- sd(L)
+
+cat("Pérdida esperada:", mean_loss, "\n")
+cat("Varianza de pérdidas:", var_loss, "\n")
+cat("Desviación estándar:", sd_loss, "\n")
+
+# VaR 
+alpha <- 0.95
+VaR_95 <- quantile(L, alpha)
+
+# TVaR
+TVaR_95 <- mean(L[L >= VaR_95])
+
+cat("VaR al 95%:", VaR_95, "\n")
+cat("TVaR al 95%:", TVaR_95, "\n")
+```
+
+El portafolio presenta una pérdida esperada de $-634.28$ unidades monetarias, lo que indica que, en promedio, se anticipa una ganancia leve o una pérdida muy pequeña.
+
+La varianza de las pérdidas, de $160,715,890$, y su correspondiente desviación estándar de $12,677.38$, muestran una alta dispersión en los resultados del portafolio y una volatilidad considerable.
+
+En cuanto a las medidas de riesgo extremo:
+
+-   El $VaR$ al $95\%$, es de $20,047.06$ unidades monetarias, que señala que con un nivel de confianza del $95\%$, las pérdidas no deberían superar ese valor bajo condiciones normales del mercado.
+
+    Sin embargo, existe un $5\%$ de probabilidad de que se presenten pérdidas superiores.
+
+-   Por su parte, el $TVaR$ al $95\%$, es de $25,205.25$ unidades monetarias y representa la pérdida promedio en los escenarios que superen el $VaR$.
+
+La diferencia entre el VaR y el TVaR refleja la exposición del portafolio a eventos extremos, lo que implica que los escenarios de cola pueden resultar financieramente costosos y evidencian que es un portafolio con riesgo elevado en situaciones extremas.
+
+## Método Simulación historica
+
+```{r}
+# Pesos del portafolio
+w<- c(0.30, 0.12, 0.13, 0.45) 
+capital<- 1000000
+a<- capital*w
+#numero de datos
+n <- nrow(X)
+
+# Simulación histórica de pérdidas
+L <- numeric(n)
+V_inicial <- sum(a)
+
+for (i in 1:n) {
+  V_final <- sum(a * exp(as.numeric(X[i, ])))  
+  L[i] <- V_inicial - V_final                  
+}
+
+# Histograma de pérdidas
+#hist(L, breaks = 40, col = "skyblue", main = "Simulación Histórica de Pérdidas",
+    # xlab = "Pérdida", border = "white")
+
+# Medidas de riesgo
+alpha <- 0.95
+
+perdida_esperada <- mean(L)
+desv_estandar <- sd(L)
+
+VaR <- quantile(L, alpha)
+TVaR <- mean(L[L > VaR])
+
+cat("Pérdida esperada:", perdida_esperada, "\n")
+cat("Desviación estándar:", desv_estandar, "\n")
+
+cat("VaR al 95%:", VaR, "\n")
+cat("TVaR al 95%:", TVaR, "\n")
+```
+
+El portafolio presenta una pérdida esperada de $-449.02$ unidades monetarias, lo que sugiere que, en promedio, se espera una ganancia ligera. Sin embargo, la desviación estándar de $15,171$ revela una alta variabilidad reflejando un nivel considerable de riesgo y volatilidad en el comportamiento del portafolio.
+
+En relación con las medidas de riesgo extremo:
+
+-   El Valor en Riesgo- $VaR$ al $95\%$ es de $22,184.72$ unidades monetarias, indica que con un nivel de confianza del $95\%$, las pérdidas no deberían superar dicho valor bajo condiciones normales del mercado.
+
+    Esto significa que solo en el $5\%$ de los casos se podrían observar pérdidas superiores a ese umbral.
+
+-   No obstante, el $TVaR$ al $95\%$, es de $34,313.57$ y muestra que en esos escenarios más adversos deñ $5\%$, las pérdidas promedio ascienden significativamente, reflejando la magnitud del riesgo extremo al que está expuesto el portafolio.
+
+## **Back testing**
+
+```{r}
+# Pesos del portafolio
+w<- c(0.30, 0.12, 0.13, 0.45) 
+capital<- 1000000
+a<- capital*w                
+
+
+# Rendimientos del portafolio
+R_port <- as.numeric(X %*% a)    # rendimientos a^T* X
+n <- length(R_port)
+
+# Parámetros 
+window <- 800     # tamaño de ventana histórica
+horizon <- 200    # días fuera de muestra (backtesting)
+alpha <- 0.95     # nivel de confianza 
+p <- 1 - alpha    # probabilidad esperada de excepción (5%)
+
+# vectores en blanco
+VaR_hist <- rep(NA, horizon)
+VaR_norm <- rep(NA, horizon)
+VaR_mc   <- rep(NA, horizon)
+Loss_real <- rep(NA, horizon)
+#para reproducibilidad
+set.seed(123)
+
+# Cálculo de VaR con ventana móvil
+for (i in 1:horizon) {
+  
+  # Datos de estimación 800 días previos
+  X_window <- X[i:(i + window - 1), ]
+  R_window <- as.numeric(X_window %*% a)
+  Loss_window <- -R_window   # pérdidas positivas
+  
+  # Observación fuera de muestra (día siguiente)
+  R_real <- as.numeric(X[i + window, ] %*% a)
+  Loss_real[i] <- -R_real
+  
+  # VaR simulacion histórica
+  VaR_hist[i] <- quantile(Loss_window, probs = alpha)   # cuantil
+  
+  # VaR  Varianza–Covarianza
+  mu <- mean(Loss_window)
+  sigma <- sd(Loss_window)
+  VaR_norm[i] <- mu + sigma * qnorm(alpha)     # duda
+  
+  # VaR Monte Carlo suponer Normal multivariada
+  mu_X <- colMeans(X_window)
+  sigma_X <- cov(X_window)
+  X_sim <- rmvnorm(100000, mean = mu_X, sigma = sigma_X)
+  R_sim <- X_sim %*% a
+  L_sim <- -R_sim                                       # pérdidas simuladas
+  VaR_mc[i] <- quantile(L_sim, probs = alpha)
+}
+
+# Resultados de backtesting
+results <- data.frame(
+  VaR_Historico = VaR_hist,
+  VaR_Normal = VaR_norm,
+  VaR_MonteCarlo = VaR_mc,
+  Pérdida_Real = Loss_real
+)
+
+# Número de violaciones PR> VaR
+Ex_hist <- sum(results$Pérdida_Real > results$VaR_Historico)
+Ex_norm <- sum(results$Pérdida_Real > results$VaR_Normal)
+Ex_mc   <- sum(results$Pérdida_Real > results$VaR_MonteCarlo)
+
+cat("E_x del M. Simulación Historica: ", Ex_hist, "\n")
+cat("E_x del M. Var-Cov: ", Ex_norm, "\n")
+cat("E_x del M. Monte-Carlo: ", Ex_mc, "\n")
+
+k <- horizon  # total de observaciones
+
+# Prueba Binomial de Kupiec
+cat("Prueba Binomial para el VaR \n")
+cat("Nivel de confianza:", alpha, "\n\n")
+
+cat("VaR con Simulacion Histórica:\n")
+print(binom.test(Ex_hist, k, p, alternative = "two.sided"))
+cat("\n VaR con Var-Cov :\n")
+print(binom.test(Ex_norm, k, p, alternative = "two.sided"))
+cat("\nVaR con Monte Carlo:\n")
+print(binom.test(Ex_mc, k, p, alternative = "two.sided"))
+```
+
+```{r, fig.width=10, fig.height=6, out.width="100%", fig.align="center"}
+par(xpd = TRUE, mar = c(5, 4, 4, 2) + 0.5)
+plot(results$Pérdida_Real, type = "l", col = "black",
+     main = "Backtesting del VaR (Ventana móvil de 800 días, α = 95%, portafolio no uniforme)",
+     ylab = "Pérdida del portafolio", xlab = "Días fuera de muestra")
+lines(results$VaR_Historico, col = "blue", lwd = 1.5)
+lines(results$VaR_Normal, col = "red", lwd = 1.5)
+lines(results$VaR_MonteCarlo, col = "darkgreen", lwd = 1.5)
+
+legend("bottom", inset = c(0, -0.30), horiz = TRUE, bty = "n",
+       legend = c("Pérdida real", "VaR S.Histórica", "VaR Var-Cov", "VaR Monte Carlo"),
+       col = c("black", "blue", "red", "darkgreen"), lty = 1)
+```
+
+Se observa que, en la mayoría de los casos, las pérdidas reales permanecen por debajo de los valores de $VaR$ estimados. No obstante, en algunos periodos se presentan picos negativos significativos en la pérdida real, especialmente hacia el final del periodo, donde las pérdidas exceden los niveles de $VaR$. Estos episodios representan las excepciones o violaciones del modelo, es decir, los casos en que el modelo subestimó las pérdidas extremas.
+
+Los tres métodos (Simulación Histórica, Var-Cov y Monte Carlo) presentan comportamientos muy similares, aunque el $VaR$ con el método de Var-Cov tiende a ubicarse ligeramente por debajo de los otros dos y los métodos de Simulación Histórica y Monte Carlo resultan más conservadores porque capturan mejor la variabilidad empírica de los datos.
+
+## **¿Cúal es el mejor** $VaR$**?**
+
+Como se explico anteriormente la hipotesis nula es $H_{0}: p =1-\alpha$ , donde p es la probabilidad verdadera de que la perdida exceda el VaR. Además recordemos que si $p-value<0.05$ rechazamos $H_{0}$ y el modelo de $VaR$ no tiene la tasa de excepciones esperado.
+
+A continuacion se muestran los resultados obtenidos:
+
+| Método de VaR            | $E_{k}$ | p-value   |
+|--------------------------|---------|-----------|
+| **Var-Cov**              | $3$     | $0.02114$ |
+| **Monte-Carlo**          | $3$     | $0.02114$ |
+| **Simulación historica** | $3$     | $0.02114$ |
+
+Como en todos los métodos del $VaR$ tiene un $p-value$ menor a $0.05$, entonces rechazamos $H_{0}$ y decimos que hay suficiente evidencia estadistica con un nivel de confianza del $95\%$ que la tasa observada de excepciones no coincide con el valor teórico esperado del $5\%$. En otras palabras, los modelos de $VaR$ evaluados tienden a subestimar el riesgo real del portafolio.
+
+En este caso de un portafolio no uniforme, los modelos de $VaR$ son demasiado conservadores porque predicen niveles de pérdida más altos de lo que realmente ocurre, lo que reduce la frecuencia de violaciones observadas. En este caso, da lo mismo el metodo que escojamos.
+
+# Conclusiones
+
+El análisis evidencia que la elección del método de cálculo del $VaR$ depende tanto de la composición del portafolio como de la distribución empírica de los rendimientos. El método de Simulación Histórica mostró el mejor desempeño estadístico bajo un portafolio uniforme, mientras que en el portafolio no uniforme todos los métodos tienden a subestimar el riesgo real.
+
+El cambio en la asignación de capital altera el peso relativo de cada activo en el riesgo total. En el portafolio no uniforme, la mayor ponderación de capital es en Vertex Pharmaceuticals $(45\%)$ incrementa la exposición al riesgo específico de esa acción, lo que explica la mayor dispersión y las mayores pérdidas extremas $(TVaR)$. Podriamos decir que una diversificación equilibrada reduce la concentración del riesgo y mejora la estabilidad del portafolio.
+
+En resumen, el método de **Varianzas-Covarianzas** tiende a subestimar el riesgo cuando las distribuciones de rendimientos no son normales, como es común en mercados con asimetrías o colas pesadas. En cambio, la **Simulación Histórica** refleja mejor el comportamiento real de los datos porque no impone supuestos de normalidad. El método de **Monte Carlo**, depende de la correcta especificación del modelo de distribución y la correlación entre los activos.
