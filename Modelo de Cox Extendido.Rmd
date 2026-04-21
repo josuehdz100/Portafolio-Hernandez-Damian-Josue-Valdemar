@@ -1,0 +1,396 @@
+---
+title: ""
+author: ""
+date: ""
+output: pdf_document
+fontsize: 11pt
+geometry: margin=1.5 cm
+header-includes:
+  - \usepackage{float}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,      # Oculta el código
+  message = FALSE,   # Oculta mensajes
+  warning = FALSE,   # Oculta advertencias
+  error = TRUE,
+  fig.show = "asis",
+  #out.width = "55%",
+  #fig.dim = c(4, 3),
+  fig.align = "center"  
+)
+```
+
+# HERNANDEZ DAMIAN JOSUE VALDEMAR
+
+# **Modelo de Cox Extendido**
+
+El punto de partida para entender el modelo de Cox extendido es recordar la forma básica del modelo de Cox proporcional. En su versión clásica, la función de riesgo se escribe como $$
+h(t \mid X) = h_0(t)\,\exp(\beta_1 X_1 + \beta_2 X_2 + \cdots + \beta_p X_p),
+$$ donde $h_0(t)$ es el riesgo basal y las $X_i$ son covariables constantes en el tiempo. Cuando este modelo se utiliza, se asume que la razón de riesgos entre dos individuos permanece constante, lo que se conoce como el supuesto de \textit{proporcionalidad de riesgos}. Sin embargo, en muchos estudios longitudinales este supuesto deja de ser válido, porque las condiciones de los individuos cambian con el tiempo.
+
+El modelo de Cox extendido surge precisamente para atender esa situación. Su idea es permitir que algunas covariables dependan explícitamente del tiempo, de modo que puedan tomar valores diferentes en distintos momentos del seguimiento. Matemáticamente, esto se expresa escribiendo la covariable como $X(t)$ en lugar de $X$. La forma general del modelo se convierte entonces en $$
+h(t \mid X(t)) = h_0(t)\,\exp\left(\sum_{i=1}^p \beta_i X_i(t)\right).
+$$
+
+Aunque la estructura es similar a la del modelo clásico, el hecho de que $X_i(t)$ cambie permite que el hazard ratio ya no sea constante en el tiempo. Es decir, la comparación entre dos individuos A y B puede escribirse como $$
+HR(t) = \frac{h(t \mid X_A(t))}{h(t \mid X_B(t))} 
+= \exp\left( \beta \,[X_A(t) - X_B(t)] \right),
+$$ lo que muestra claramente que el hazard ratio ahora depende del tiempo si los valores de $X(t)$ cambian.
+
+Además de permitir covariables dinámicas, el modelo extendido también se utiliza cuando sospechamos que una covariable \`\`fija'' no cumple el supuesto de proporcionalidad. Para verificarlo, se introduce un término de interacción con el tiempo, por ejemplo: $$
+h(t \mid X) = h_0(t)\,\exp\left(\beta X + \delta\, X \cdot g(t)\right),
+$$ donde $g(t)$ puede ser simplemente $t$, $\log(t)$ o alguna función más compleja.\
+Si el coeficiente $\delta$ resulta significativo, significa que el efecto de $X$ cambia con el tiempo, y por lo tanto el modelo proporcional original no es adecuado. En ese caso, el hazard ratio se vuelve una función del tiempo: $$
+HR(t) = \exp\left(\beta + \delta\, g(t)\right),
+$$ lo que permite modelar situaciones donde el riesgo va aumentando o disminuyendo conforme transcurre el tiempo.
+
+Otra forma de construir variables dependientes del tiempo es mediante funciones tipo Heaviside, que introducen cambios de efecto en momentos específicos.
+
+\paragraph{Variable Dependiente del Tiempo tipo Heaviside}
+
+Un caso particular dentro del modelo extendido se da cuando el efecto de la covariable cambia abruptamente en un punto del tiempo. Esto se modela mediante una función tipo Heaviside: $$
+H(t - c) =
+\begin{cases}
+0, & \text{si } t \leq c,\\
+1, & \text{si } t > c.
+\end{cases}
+$$ donde $c$ es el tiempo del cambio.\
+El modelo se expresa como: $$
+h(t \mid X) = h_0(t)\, \exp\big(\beta_1 X + \beta_2 X\, H(t - c)\big).
+$$ Antes del tiempo $c$, el efecto de la covariable es $\exp(\beta_1)$. Después de $c$, el efecto cambia a: $$
+HR = \exp(\beta_1 + \beta_2),
+$$ mostrando un cambio estructural en el riesgo. Gráficamente, el hazard ratio presenta un salto justo en el tiempo en que ocurre la modificación, lo cual lo distingue de los cambios graduales del modelo extendido continuo.
+
+\paragraph{Tipos de variables dependientes del tiempo}
+
+En el modelo de Cox extendido, las covariables que cambian con el tiempo pueden clasificarse en tres categorías principales:
+
+\textbf{1. Covariables definidas (o generadas)}\
+Son variables creadas artificialmente para modelar un cambio estructural o gradual en el efecto.\
+Ejemplos típicos incluyen: $$
+X(t) = X \cdot t, \qquad 
+X(t) = X \cdot \log(t), \qquad 
+X(t) = X \cdot H(t - c),
+$$ donde este último corresponde a una función tipo Heaviside.\
+Estas variables permiten introducir efectos que evolucionan de manera controlada o presentan saltos en momentos específicos del tiempo.
+
+\textbf{2. Covariables internas}\
+Son aquellas que cambian por características propias del individuo a lo largo del tiempo.\
+Ejemplos:
+
+\begin{itemize}
+    \item peso,
+    \item fumar/no fumar,
+    \item empleo o estatus laboral.
+\end{itemize}
+
+Estas variables requieren datos medidos repetidamente en el tiempo.
+
+\textbf{3. Covariables ancilares}\
+Son variables que dependen de factores externos al individuo y cambian a lo largo del estudio.\
+Ejemplos:
+
+\begin{itemize}
+    \item nivel de contaminación ambiental,
+    \item disponibilidad de donantes,
+    \item condiciones climáticas o epidemiológicas.
+\end{itemize}
+
+Este tipo de variables ofrece una gran flexibilidad, aunque implica mayor complejidad en la organización de los datos y en la interpretación del modelo.
+
+\paragraph{¿Cuándo se utiliza el Modelo de Cox Extendido?}
+
+El modelo de Cox extendido se recomienda en situaciones donde el modelo de Cox proporcional no es adecuado. En particular:
+
+\begin{itemize}
+    \item Cuando las curvas de riesgo entre grupos se cruzan, lo cual indica que el supuesto de riesgos proporcionales no se cumple.
+    \item Cuando se sospecha que el efecto de una covariable cambia con el tiempo.
+    \item Cuando se cuenta con covariables cuyo valor varía durante el seguimiento del estudio.
+\end{itemize}
+
+En estos casos, el modelo extendido permite capturar relaciones dinámicas que el modelo proporcional clásico no puede describir.
+
+\paragraph{Interpretación mediante hazard ratios}
+
+En el modelo de Cox proporcional, el hazard ratio es constante e igual a: $$
+HR = \exp(\beta),
+$$ lo que representa una línea horizontal en un gráfico del tiempo frente al hazard ratio.
+
+En el modelo de Cox extendido, el hazard ratio depende del tiempo: $$
+HR(t) = \exp\big(\beta + \gamma g(t)\big),
+$$ y en consecuencia la gráfica del HR es una curva ascendente, descendente o variable.
+
+En el caso Heaviside, el hazard ratio cambia abruptamente en un punto: $$
+HR =
+\begin{cases}
+\exp(\beta_1), & t \le t_0, \\
+\exp(\beta_1 + \beta_2), & t > t_0.
+\end{cases}
+$$
+
+\paragraph{Preparación de los datos}
+
+Trabajar con covariables dependientes del tiempo implica una preparación distinta de los datos. Cada individuo se divide en varios intervalos donde cada fila representa un periodo en el que los valores de las covariables permanecen constantes. Esto permite que el modelo evalúe correctamente los cambios temporales y que la función de verosimilitud parcial (que sigue siendo la base del método de estimación) incorpore adecuadamente los conjuntos de riesgo que van variando. Aunque esto hace que el análisis sea más complejo, también permite capturar relaciones dinámicas que el modelo de Cox clásico no puede describir.
+
+\paragraph{Desventajas}
+
+\begin{itemize}
+    \item Más difícil de estimar
+    \item Requiere definir bien cómo cambia la variable con el tiempo
+    \item El HR se vuelve más complejo de interpretar
+\end{itemize}
+
+\paragraph{Ventajas}
+
+\begin{itemize}
+    \item Mucho más flexible
+    \item Representa mejor la realidad cuando las condiciones no son estáticas
+    \item Permite evaluar adecuadamente efectos variables en el tiempo
+\end{itemize}
+
+# Estimación de los coeficientes en el Modelo de Cox Extendido
+
+La estimación en el modelo de Cox extendido se basa, igual que en el modelo proporcional clásico, en la maximización de la verosimilitud parcial. Sin embargo, la presencia de covariables dependientes del tiempo modifica la estructura de los conjuntos de riesgo y, por tanto, la forma en la que se construye la verosimilitud.
+
+Sea $X_i(t)$ la covariable dependiente del tiempo para el individuo $i$. La función de riesgo se expresa como: $$
+h_i(t) = h_0(t) \exp\big(\beta^\top X_i(t)\big).
+$$
+
+La verosimilitud parcial toma la forma: $$
+L(\beta) = \prod_{j=1}^{D} 
+\frac{\exp\big(\beta^\top X_{(j)}(t_j)\big)}
+{\sum_{i \in R(t_j)} \exp\big(\beta^\top X_i(t_j)\big)},
+$$ donde:
+
+\begin{itemize}
+    \item \(D\) es el número total de eventos,
+    \item \(t_j\) es el tiempo del evento \(j\),
+    \item \(X_{(j)}(t_j)\) es el valor actual de las covariables del individuo que experimenta el evento,
+    \item \(R(t_j)\) es el conjunto de riesgo en el instante \(t_j\), actualizado dinámicamente según los cambios de las covariables.
+\end{itemize}
+
+Aunque la forma matemática es similar al caso clásico, la diferencia clave es que los valores de las covariables y los conjuntos de riesgo dependen explícitamente del tiempo. Esto requiere que los datos se estructuren en múltiples intervalos por individuo, de modo que cada fila represente un periodo en el cual las covariables permanecen constantes.
+
+La maximización de la verosimilitud parcial se realiza mediante métodos numéricos estándar, como Newton--Raphson, tal como en el modelo clásico, pero aplicados a una estructura de datos expandida.
+
+# Diagnóstico de la necesidad de un Modelo de Cox Extendido
+
+Antes de emplear un modelo de Cox extendido, es fundamental determinar si el supuesto de proporcionalidad de riesgos del modelo de Cox clásico se mantiene a lo largo del tiempo. Dicho supuesto implica que el efecto de cada covariable sobre el riesgo es constante y multiplicativo, por lo que cualquier violación afecta directamente la validez de las inferencias. Para evaluar esto se utilizan diversos métodos diagnósticos que permiten detectar patrones temporales, inconsistencias o comportamientos no lineales en los efectos de las covariables.
+
+\paragraph{1. Pruebas basadas en residuos de Schoenfeld}
+
+Los residuos de Schoenfeld sirven para evaluar la proporcionalidad de riesgos, ya que capturan la discrepancia entre los valores observados y los esperados de las covariables en los tiempos de evento:
+
+\begin{itemize}
+\item Cada residuo corresponde únicamente a los tiempos de falla (no a los censurados), lo que hace que reflejen la relación entre una covariable y el riesgo justo en el momento en que ocurre el evento.
+\item Si el efecto de una covariable es verdaderamente proporcional, los residuos deberían comportarse como ruido aleatorio alrededor de cero, sin mostrar tendencias sistemáticas.
+\item Cuando los residuos presentan un patrón claro de asociación con el tiempo, por ejemplo valores más altos al inicio y más bajos al final, esto sugiere que la influencia de la covariable no es constante.
+\end{itemize}
+
+En términos prácticos: Correlación significativa entre residuos de Schoenfeld y el tiempo, entonces existe una violación del supuesto de riesgos proporcionales
+
+\paragraph{2. Pruebas estadísticas globales de proporcionalidad}
+
+Además de evaluar covariables individualmente, es útil aplicar contrastes que examinen simultáneamente si el modelo en conjunto cumple el supuesto de proporcionalidad. Entre los más utilizados se encuentra la prueba global de Grambsch y Therneau. Este tipo de pruebas:
+
+\begin{itemize}
+\item Evalúa la suma de las tendencias de los residuos de Schoenfeld para todas las covariables, generando un estadístico que refleja el grado de violación global.
+\item Si el resultado es significativo, se interpreta como evidencia de que el modelo proporcional no es adecuado en su forma estándar.
+\item Permite decidir si debe considerarse un modelo extendido aun cuando ninguna covariable individual muestre un patrón muy fuerte, ya que pequeñas desviaciones acumuladas pueden resultar importantes.
+\end{itemize}
+
+\paragraph{3. Inspección gráfica}
+
+Las técnicas gráficas permiten detectar violaciones del supuesto de proporcionalidad de manera intuitiva. Las principales opciones son:
+
+\begin{itemize}
+\item \textbf{Residuos de Schoenfeld suavizados:} al graficar los residuos contra el tiempo y aplicar un suavizador (loess o splines), se puede observar si existe una tendencia clara. Una línea horizontal implica proporcionalidad, mientras que una curva indica cambio temporal del efecto.
+
+\item \textbf{Gráficas log-log de Kaplan-Meier:} cuando se comparan dos grupos, si las curvas \(\log(-\log(S(t)))\) son aproximadamente paralelas, el supuesto suele mantenerse; si se separan o convergen irregularmente, es una señal de violación.
+
+\item \textbf{Curvas de riesgo o supervivencia que se cruzan:} el cruce de curvas sugiere que un grupo tiene mayor riesgo al inicio y otro más tarde, lo cual es incompatible con hazard ratios constantes.
+\end{itemize}
+
+\paragraph{4. Hazard ratios no constantes}
+
+En análisis preliminares también puede observarse que el efecto de una covariable cambia en magnitud o incluso cambia de signo. Esto puede surgir de:
+
+\begin{itemize}
+\item análisis descriptivos de subgrupos;
+\item modelos ajustados por intervalos de tiempo;
+\item comparaciones de riesgos acumulados;
+\item exploración de interacciones entre el tiempo y covariables.
+\end{itemize}
+
+Cuando el hazard ratio estimado para una covariable no es estable a lo largo del seguimiento, significa que la relación entre la covariable y el riesgo está sujeta a la dinámica temporal. En tales casos:
+
+$$
+\text{HR dependiente del tiempo}
+\;\;\Longrightarrow\;\;
+\text{introducción necesaria de términos } \beta(t)
+\text{ o covariables dependientes del tiempo.}
+$$
+
+\paragraph{Conclusión diagnóstica}
+
+Si cualquiera de estos procedimientos sugiere que el efecto de alguna covariable varía con el tiempo, entonces el modelo clásico de Cox deja de ser apropiado. En ese caso, el enfoque correcto es el modelo de Cox extendido, ya sea incorporando interacciones explícitas con funciones del tiempo o mediante la inclusión de covariables dependientes del tiempo. Este modelo permite que los hazard ratios evolucionen.
+
+# **Diferencias entre el Modelo de Cox Proporcional y el Modelo de Cox Extendido**
+
+Aunque ambos modelos comparten la misma estructura básica y la misma filosofía de análisis de supervivencia, existen diferencias fundamentales en sus supuestos, capacidad de modelado y requerimientos de datos. Estas diferencias son esenciales para determinar cuál modelo es adecuado para cada situación empírica.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{4cm}|p{5cm}|p{5cm}|}
+\hline
+\textbf{Aspecto} & \textbf{Modelo de Cox Proporcional} & \textbf{Modelo de Cox Extendido} \\
+\hline
+
+\textbf{Supuesto principal} 
+& Requiere estrictamente el supuesto de proporcionalidad de riesgos; el hazard ratio permanece constante en el tiempo. 
+& Permite violaciones del supuesto de proporcionalidad mediante la inclusión de covariables dependientes del tiempo o interacciones con funciones del tiempo. \\
+\hline
+
+\textbf{Covariables} 
+& Solo admite covariables fijas en el tiempo. 
+& Admite covariables dependientes del tiempo: definidas, internas o externas (ancilares). \\
+\hline
+
+\textbf{Forma del hazard ratio} 
+& Constante en el tiempo: \( HR = \exp(\beta) \). 
+& Variable en el tiempo: \( HR(t) = \exp(\beta + \gamma\,g(t)) \) o según cambien las covariables \(X(t)\). \\
+\hline
+
+\textbf{Estructura de datos} 
+& Cada individuo aparece en una sola fila (formato estándar). 
+& Cada individuo requiere múltiples intervalos de tiempo (formato \textit{start--stop}). \\
+\hline
+
+\textbf{Flexibilidad} 
+& Limitada; no captura cambios temporales en los efectos. 
+& Alta; permite modelar efectos dinámicos, no lineales y dependientes del tiempo. \\
+\hline
+
+\textbf{Interpretación} 
+& Directa: los coeficientes representan efectos constantes en el tiempo. 
+& Más compleja: los efectos dependen del tiempo y pueden cambiar en magnitud o dirección. \\
+\hline
+
+\textbf{Cuándo usarlo} 
+& Cuando el supuesto de riesgos proporcionales es razonable y las curvas de riesgo no se cruzan. 
+& Cuando se detecta o se sospecha variación temporal en el efecto de una covariable. \\
+\hline
+\end{tabular}
+\end{table}
+
+En síntesis, el modelo clásico es adecuado cuando los efectos son constantes, mientras que el modelo extendido permite capturar fenómenos dinámicos donde las condiciones del individuo o del entorno evolucionan a lo largo del estudio.
+
+\newpage
+
+# **Aplicación en R: Análisis de Supervivencia en Trasplante de Corazón**
+
+Para ilustrar la aplicación del Modelo de Cox Extendido con covariables dependientes del tiempo, utilizamos los datos históricos del **Programa de Trasplante de Corazón de la Universidad de Stanford**. Estos datos son un referente clásico en el análisis de supervivencia, presentados originalmente por Crowley y Hu (1977) en el *Journal of the American Statistical Association*.
+
+## Descripción de los datos y contexto
+
+El conjunto de datos `heart`, incluido en el paquete `survival` de R, contiene la información de supervivencia de pacientes que fueron aceptados en el programa de trasplante. El objetivo del estudio es determinar si el trasplante de corazón prolonga la vida, teniendo en cuenta que los pacientes entran al estudio (son aceptados en la lista) antes de recibir el trasplante.
+
+El tratamiento (trasplante) no se asigna al inicio (tiempo 0), sino que ocurre durante el seguimiento. Esto convierte al estatus de trasplante en una **covariable dependiente del tiempo**, ya que un paciente debe sobrevivir lo suficiente para recibir el órgano.
+
+Las variables principales utilizadas en este análisis son:
+
+```{r}
+library(survival)
+data(heart)
+
+# Visualizamos las primeras filas para observar la estructura start-stop
+# Observamos cómo el estatus de trasplante puede cambiar
+head(heart[, c("start", "stop", "event", "age", "transplant")], 10)
+```
+
+-   **start, stop, event:** Estructura de proceso de conteo. Un paciente puede tener múltiples filas; por ejemplo, una fila desde que entra a la lista hasta que recibe el trasplante (o muere/censura sin recibirlo), y otra fila desde el trasplante en adelante.
+
+-   **age:** Edad del paciente al momento de la aceptación (en el conjunto procesado `heart` esta centrada en 48 años).
+
+-   **surgery:** Variable binaria que indica si el paciente tuvo una cirugía de bypass previa (1 = Sí, 0 = No).
+
+-   **transplant:** Variable indicadora dependiente del tiempo (0 = No ha recibido trasplante, 1 = Ya recibió trasplante).
+
+## Ajuste del Modelo de Cox Extendido
+
+Se ajustó un modelo de Cox considerando el estatus de trasplante como una covariable dependiente y a los intervalos de start (antes del trasplante) y stop (despues del trasplante) . A continuación se presentan los resultados obtenidos:
+
+```{r}
+# Ajuste del modelo de Cox con covariable dependiente del tiempo
+modelo_cox_ext <- coxph(Surv(start, stop, event) ~ age + surgery + transplant, 
+                        data = heart)
+
+summary(modelo_cox_ext)
+```
+
+**Interpretación de los coeficientes:**
+
+1.  **Edad (age):** Se encontró una asociación significativa y positiva ($p < 0.05$). Por cada año adicional de edad, el riesgo de muerte aumenta, lo cual es consistente con la literatura médica.
+
+2.  **Cirugía previa (surgery):** El coeficiente negativo indica un efecto positivo. Los pacientes con cirugía de bypass previa mostraron un riesgo menor de muerte en comparación con aquellos sin cirugía previa, ajustando por las demás variables.
+
+3.  **Trasplante (transplant):** En este modelo específico, el efecto del trasplante no resultó estadísticamente significativo ($p > 0.05$). Esto ilustra la complejidad de los datos reales: aunque el trasplante es una intervención vital, el riesgo quirúrgico inmediato puede contrarrestar el beneficio de supervivencia a largo plazo en un análisis global promediado.
+
+```{r}
+library(survival)
+library(survminer)
+ggforest(modelo_cox_ext, data = heart)
+
+```
+
+## Verificación de Supuestos: Residuos de Schoenfeld
+
+Para validar el modelo, es crucial comprobar el supuesto de riesgos proporcionales.Se utilizó la formulación de proceso de conteo del modelo de Cox para incorporar covariables dependientes del tiempo, como el estatus de trasplante, debemos verificar que las covariables restantes mantengan un efecto constante en el tiempo.
+
+Utilizamos la prueba basada en los residuos de Schoenfeld escalados:
+
+```{r}
+# Prueba de Riesgos Proporcionales (Schoenfeld)
+test_ph <- cox.zph(modelo_cox_ext)
+print(test_ph)
+
+```
+
+**Verificación del Supuesto de Riesgos Proporcionales**
+
+Una vez ajustado el modelo extendido, es necesario verificar que las covariables que no interactúan explícitamente con el tiempo mantengan un efecto constante. Para ello, se aplicó la prueba basada en los residuos de Schoenfeld.
+
+El análisis de los residuos arroja los siguientes valores $p$:
+
+Covariables individuales: Para age ($p = 0.34$), surgery ($p = 0.76$) y transplant ($p = 0.72$), los valores son superiores al nivel de significancia $\alpha = 0.05$.
+
+Prueba global: El estadístico global muestra un valor $p = 0.71$.
+
+Dado que todos los valores $p$, resultaron no significativos, la evidencia estadística no permite rechazar la hipótesis nula de proporcionalidad de riesgos. Este hallazgo valida la especificación del modelo, indicando que el efecto de las covariables (como la edad y la cirugía previa) se mantiene constante a lo largo del tiempo de seguimiento.
+
+No se encontró evidencia estadísticamente significativa del efecto del trasplante sobre el riesgo de muerte en este modelo ($HR \approx 1.02, p = 0.958$). Sin embargo, esto no implica ausencia de efecto, sino que el modelo no detecta una asociación clara, posiblemente debido a la complejidad del proceso (riesgo quirúrgico inicial vs. beneficio a largo plazo).
+
+**Inspección gráfica de los residuos**
+
+Para complementar la verificación numérica, se grafican los residuos de Schoenfeld escalados, tomando como ejemplo la variable age. Bajo el supuesto de proporcionalidad, se espera que la línea suavizada que acompaña a los residuos se mantenga aproximadamente horizontal.
+
+```{r}
+# Gráfico de diagnóstico para la variable Edad
+plot(test_ph)
+```
+
+**Conclusión visual:** Los resultados indican que no hay evidencia de que los efectos de las covariables (incluyendo transplant) varíen en el tiempo, es decir, el supuesto de riesgos proporcionales no se viola.
+
+**Conclusión general**
+
+El modelo de Cox con formulación de proceso de conteo permitió incorporar correctamente el trasplante como covariable dependiente del tiempo. Los resultados indican que la edad incrementa el riesgo de muerte y que la cirugía previa se asocia con una reducción del mismo. No se encontró evidencia estadísticamente significativa del efecto del trasplante en este modelo. La verificación mediante residuos de Schoenfeld no mostró violaciones al supuesto de riesgos proporcionales, lo que respalda la validez del modelo ajustado.
+
+\section*{Referencias}
+ \begin{itemize}
+      \item De las Heras Jiménez, E. (2023). \textit{Modelo de Cox con covariantes dependientes del tiempo} (Trabajo Fin de Máster, Universidad de Sevilla). Facultad de Matemáticas, Departamento de Estadística e Investigación Operativa. Recuperado de https://idus.us.es/server/api/core/bitstreams/639d50b5-ad16-4e6e-852a-ba08c7206cda/content
+      \item Kleinbaum, D. G., $\&$ Klein, M. (2012). \textit{Extension of the Cox proportional hazards model for time-dependent variables. }En Survival analysis: A self-learning text (pp. 241–277). Springer.
+      \item S.A. (S.F.).Schoenfeld Residuals.Recuperado de https://timeseriesreasoning.com/contents/schoenfeld-residuals/
+    
+ \end{itemize}
