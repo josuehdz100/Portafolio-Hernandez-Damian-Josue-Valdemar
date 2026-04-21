@@ -1,0 +1,670 @@
+---
+title: ""
+author: ""
+date: ""
+output: pdf_document
+fontsize: 11pt
+geometry: margin=1.5 cm
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,      # Oculta el código
+  message = FALSE,   # Oculta mensajes
+  warning = FALSE,   # Oculta advertencias
+  error = TRUE,
+  fig.show = "asis",
+  #out.width = "55%",
+  #fig.dim = c(4, 3),
+  fig.align = "center"  
+)
+
+```
+
+```{r}
+
+# Cargar la librería
+library(tsdl)
+#Instalar si es necesario
+#devtools::install_github("FinYang/tsdl")
+ts_202 <- tsdl[[202]]
+Xt<- ts_202
+#Xt
+```
+
+```{r librerias,include=FALSE}
+# Instalar las paqueterias si es necesario
+library(forecast)
+library(ggplot2) # 
+library(stats) # Funciones estadísticas
+library(tidyverse) # Conjunto de librerías para ciencia de datos
+library(dplyr) # Manipulación de datos
+library(moments) # Para calcular asimetría y curtosis
+library(stats)
+library(gridExtra)
+library(astsa)
+library(lmtest)
+library(seastests)
+library(imputeTS)
+library(tseries)
+library(tsdl)
+library(nortest) ###REALIZA 10 PRUEBAS DE NORMALIDAD###
+```
+
+# Analisis de la base de datos 202 de la paqueteria tsld de R
+
+# HERNANDEZ DAMIAN JOSUE VALDEMAR
+
+# **Analisis descriptivo**
+
+La serie de tiempo describe el Número de pasajeros de autobús entre
+semana en Lowa City (promedios mensuales), de septiembre de 1971 a
+diciembre de 1982 y posee 148 observaciones. Podemos ver que no existe
+ningun valor faltante en la serie de tiempo utilizando any(is.na()) y el
+resultado es FALSE, por lo tanto no es necesario imputar.
+
+```{r}
+Xt<- ts_202
+any(is.na(Xt))
+```
+
+```{r fig.width=10, fig.height=4 ,fig.align='center', out.width='93%'}
+Xt<- ts_202
+plot(Xt, main = "Pasajeros de autobús entre semana en Lowa City"
+     , ylab = "Número de personas", xlab = "Tiempo")
+```
+
+Podemos observar que la varianza no es constante, ya que aumenta
+conforme pasan los años. Además, se identifica una tendencia creciente
+no lineal, que se curva hacia arriba a medida que avanza el tiempo. Por
+último, se aprecia un comportamiento estacional cada año, es decir, con
+un período de 12.
+
+Para respaldar la idea de que existe un comportamiento estacional con un
+período de 12, utilizaremos la funcion isSeasonal() para probar si una
+serie de tiempo tienen estacionalidad siginificativa utilizando el test
+kruskal-wallis y considerando la frecuencia de 12
+
+```{r}
+isSeasonal(Xt, test = "kw", freq = 12)
+```
+
+Como el resultado es TRUE, es decir, **existe un comportamiento
+estacional con un período de 12.**
+
+**Ahora veamos el diagrama de caja por periodo y Seasonal Plot de la
+serie:**
+
+```{r fig.width=10, fig.height=4, fig.align='center', out.width='100%'}
+library(forecast)
+library(ggplot2)
+library(patchwork)
+
+# Convertir el boxplot a ggplot
+df <- data.frame(
+  Periodo = cycle(Xt),
+  Valor = as.numeric(Xt)
+)
+
+a <- ggplot(df, aes(x = factor(Periodo), y = Valor)) +
+  geom_boxplot(fill = "skyblue") +
+  labs(
+    title = "Diagramas de caja por periodo",
+    x = "Periodo",
+    y = "Valor"
+  )
+
+b <- ggseasonplot(Xt, 
+             year.labels = TRUE, 
+             year.labels.left = TRUE) +
+             ylab("Valor") +
+             xlab("Periodo del año") +
+             ggtitle("Seasonal Plot")
+
+# Mostrar en una línea
+a + b
+
+```
+
+El diagrama de caja por periodo permite analizar el comportamiento
+estacional de la serie a lo largo de un ciclo completo, en este caso un
+año. En el gráfico se observa que los valores presentan una variación
+significativa entre los distintos periodos, lo que evidencia la
+presencia de un patrón estacional marcado.
+
+Durante los primeros meses (periodos 1 a 3), los valores tienden a ser
+más altos, con medianas elevadas , lo que indica una fase de incremento.
+Posteriormente, entre los periodos 5 a 8, los valores disminuyen de
+manera notable, alcanzando los niveles más bajos del año; esto sugiere
+una fase de descenso o mínima actividad. Finalmente, en los periodos 9 a
+12, los valores aumentan nuevamente, indicando el inicio de un nuevo
+ciclo ascendente.
+
+Finalmente el análisis confirma la **existencia de una componente
+estacional anual.**
+
+El Seasonal Plot muestra un patrón recurrente a lo largo del año, lo
+notamos por valores altos en los primeros meses (enero–marzo), un
+descenso sostenido hasta mediados del año (junio–agosto) y una
+recuperación hacia el final del periodo (septiembre–diciembre). Este
+comportamiento se repite de manera consistente entre los todos los años
+de la serie, lo que confirma la **presencia de una componente estacional
+anual bien definida**. Además, se observa una **tendencia creciente en
+el nivel general de la serie**, ya que los valores de los años más
+recientes son mayores en comparación con los de los primeros años del
+periodo analizado.
+
+Para verificar que la varianza no es constante, utilizaremos la prueba
+de **Breusch-Pagan**: Esta prueba evalúa heterocedasticidad en los
+residuos de un modelo de regresión lineal.\
+La hipótesis son:
+
+$H_{0}$**:** la varianza de los residuos es constante (homocedasticidad)
+
+$H_{1}$**:** la varianza de los residuos no es constante
+(heterocedasticidad)
+
+Hay que recordar que si el **p-value \< 0.05**, entonces rechazamos
+$H_{0}$ a un nivel de confianza de $95\%$
+
+```{r}
+time <- 1:length(ts_202)
+bptest(lm(Xt ~ time))
+```
+
+El $p-value = 0.0001296$ indica que se rechaza la hipótesis nula, es
+decir que **hay evidencia estadistica para decir que la varianza es no
+constante.**
+
+Tambien realizamos la prueba **Non-constant Variance**: Similar a la
+anterior prueba , también detecta heterocedasticidad en un modelo de
+regresion lineal. Contrasta si la varianza de los residuos cambia en
+función de la variable explicativa más importante del modelo. Las
+hipotesis son:
+
+$H_{0}$: existe homocedasticidad en la varianza de los residuos
+(varianza constante).
+
+$H_{1}$: no existe homocedasticidad en la varianza de los residuos
+(varianza no es constante)
+
+```{r}
+library(forecast)
+library(car)
+ncvTest(lm(Xt ~ time))
+```
+
+En este caso, $p-value= 0.00084604$, es decir que rechazamos la
+hipotesis nula. Entonces hay **evidencia estadistica para decir que la
+varianza es no constante.**
+
+Sería necesario aplicar una transformación a la serie para estabilizarla
+o utilizar un suavizamiento con un efecto multiplicativo.
+
+**Por último observemos el ACF y PACF:**
+
+```{r fig.width=10, fig.height=4, fig.align='center', out.width='100%', message=FALSE, warning=FALSE}
+# Librerías necesarias
+library(forecast)
+library(ggplot2)
+library(patchwork)
+
+# Gráfico ACF 
+acf_plot <- ggAcf(Xt, lag.max = 25) +
+  labs(
+    title = "Función de Autocorrelación (ACF)",
+    x = "Rezagos",
+    y = "Autocorrelación"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.title = element_text(face = "bold")
+  )
+
+# Gráfico PACF 
+pacf_plot <- ggPacf(Xt, lag.max = 25) +
+  labs(
+    title = "Función de Autocorrelación Parcial (PACF)",
+    x = "Rezagos",
+    y = "Autocorrelación Parcial"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.title = element_text(face = "bold")
+  )
+
+# Mostrar ambos gráficos
+acf_plot + pacf_plot + plot_layout(widths = c(1, 1))
+
+```
+
+Se puede observar en la gráfica de la funcion de autocorrelacion (ACF)
+que existe una fuerte correlación de los datos, especialmente cada 12
+lags pues se observan los picos más grandes, lo anterior es normal
+porque sabemos que hay estacionalidad anual. Se observa un patron
+decreciente, pues existe autocorrelaciones altas en los primeros
+rezagos, que van disminuyendo gradualmente.
+
+En la grafica de la funcion de autocorrelación parcial (PACF), notamos
+que existe un pico alto y significativo, esto suguiere un termino AR(1)
+con el componente estacional anual, es decir un ARIMA(1,12,0) tal
+vez.Muchos de los valores quedan dentro del intervalo de confianza, por
+lo que no son significativos; pero hay picos en varios valores que salen
+de la banda e indican efectos estacionales.
+
+Como conclusion, la serie puede tener una diferencia simple (ya que no
+hay una fuerte caída exponencial) y hay una diferencia estacional
+intrinseca.
+
+# **Ajuste ARIMA, SAMIRA u otro**
+
+Anteriormente vimos que la varianza no es constante por lo que es
+necesario aplicar una transformación para poder ajustar un modelo a la
+serie.
+
+```{r fig.width=10, fig.height=4, fig.align='center', out.width='100%', message=FALSE, warning=FALSE}
+log_xt <- log(Xt)
+tsdisplay(log_xt)
+```
+
+Realizamos un modelo de regresión para ver si la serie transformada ya
+cumple con varianza constante.
+
+```{r}
+ncvTest(lm(log_xt ~ time))
+```
+
+Obtuvimos un p-value = 0.82605 por lo tanto no rechazamos la hipótesis
+nula y concluimos que tenemos varianza constante.
+
+```{r}
+bptest(lm(log_xt ~ time))
+```
+
+Si realizamos la prueba de Breusch-Pagan obtenemos un p-value=0.7647 por
+lo que no rechazamos la hipótesis nula y volvemos a concluir que tenemos
+varianza constante.
+
+Para empezar a ajustar un modelo primero vamos a aplicar una
+descomposición para poder ver los elementos de la serie.
+
+```{r fig.width=10, fig.height=4, fig.align='center', out.width='100%', message=FALSE, warning=FALSE}
+dec_mult <- decompose(log_xt, type="additive")
+plot(dec_mult)
+
+```
+
+```{r}
+isSeasonal(log_xt , test = "kw", freq = 12)
+kw(log_xt , freq = 12)
+```
+
+Por lo anterior podemos observar que en efecto tiene tendencia y
+estacionalidad por lo que es necesario aplicar diferenciación.
+
+Para elegir cuántas diferencias aplicar, vamos a comparar las varianzas
+de la serie con las diferencias y elegiremos la diferencia con menor
+varianza.
+
+```{r fig.width=10, fig.height=4, fig.align='center', out.width='100%', message=FALSE, warning=FALSE}
+# Diferencias
+#tsdisplay(diff(log_xt, 12))        # solo estacional
+#tsdisplay(diff(log_xt))            # solo regular
+tsdisplay(diff(diff(log_xt), 12))  # regular + estacional
+
+```
+
+```{r, results='hide', message=FALSE, warning=FALSE}
+# Comparar varianzas
+#var(log_xt)                       # varianza original 0.08872871
+#var(diff(log_xt, 12))             # solo estacional  0.007812388
+#var(diff(log_xt))                 # solo regular  0.03522837
+#var(diff(diff(log_xt), 12))       # regular + estacional 0.006295328
+#var(diff(diff(log_xt, 12), 12))   # doble estacional   0.01846717
+
+```
+
+```{r}
+var(diff(diff(log_xt), 12))
+```
+
+Comparamos las varianzas de la serie con las diferencias anteriores y
+obtuvimos que la diferencia con menor varianza fue diff(diff(log_xt,
+12)), gracias a esto llegamos a que el valor de d=1, D=1 y s=12.
+
+En el gráfico superior se observa que la serie transformada oscila
+alrededor de la media cero, sin mostrar tendencia ni patrones
+estacionales visibles. La varianza se mantiene estable a lo largo del
+tiempo, lo cual indica que las transformaciones aplicadas fueron
+efectivas para estabilizar tanto la media como la varianza, cumpliendo
+con las condiciones necesarias para ajustar un modelo ARIMA o SARIMA.
+
+El análisis de la función de autocorrelación (ACF) muestra que las
+correlaciones entre los valores actuales y los valores anteriores
+disminuyen rápidamente y se mantienen, en su mayoría, dentro de los
+límites de significancia. Esto sugiere que no existe una dependencia
+fuerte entre los valores de distintos períodos, lo que indica que los
+componentes de tendencia y estacionalidad fueron eliminados
+adecuadamente. Por otro lado, la función de autocorrelación parcial
+(PACF) presenta un leve pico en el primer período y una posible pequeña
+señal en el duodécimo, lo que podría asociarse con la presencia de un
+término autorregresivo simple o estacional de bajo orden.
+
+```{r}
+# Serie diferenciada adecuada (s=12, d=1, D=1)
+Wt <- diff(diff(log_xt, 12))
+adf.test(Wt)
+```
+
+A partir de estas observaciones, se concluye que la serie diferenciada
+es estacionaria pues obtuvimos un p-value = 0.01 por lo tanto rechamos
+H0 y es apta para la estimación de modelos SARIMA con parámetros bajos.
+Los modelos candidatos más razonables para su evaluación son los
+siguientes:
+
+Proponemos como opciones iniciales:
+
+SARIMA(0,1,1)(0,1,1) SARIMA(1,1,0)(0,1,1) SARIMA(0,1,1)(1,1,0)
+
+```{r, results='hide', message=FALSE, warning=FALSE}
+#Ajustar modelos 
+log_xt <- log(Xt)
+# Modelo automático (dejamos estacional=TRUE, stepwise=FALSE para explorar mejor)
+fit0 <- auto.arima(log_xt, seasonal = TRUE, stepwise = FALSE, approximation = FALSE, trace = TRUE)
+
+# Modelo 1 candidato: SARIMA(0,1,1)(0,1,1)[12]
+fit1 <- arima(log_xt, order=c(0,1,1), seasonal=list(order=c(0,1,1), period=12))
+
+# Modelo 2 candidato: SARIMA(1,1,1)(0,1,1)[12]
+fit2 <- arima(log_xt, order=c(1,1,0), seasonal=list(order=c(0,1,1), period=12))
+
+# SARIMA(0,1,1)(1,1,1)[12]
+fit3 <- arima(log_xt, order=c(0,1,1), seasonal=list(order=c(1,1,0), period=12))
+
+# Resumen y significancia de parámetros
+summary(fit0)
+summary(fit1)
+summary(fit2)
+summary(fit3)
+
+# Lista de modelos y nombres
+modelos <- list(fit0, fit1, fit2, fit3)
+nombres <- c("auto.arima", 
+             "SARIMA(0,1,1)(0,1,1)[12]", 
+             "SARIMA(1,1,0)(0,1,1)[12]", 
+             "SARIMA(0,1,1)(1,1,0)[12]")
+
+# Crear tabla vacía
+tabla_intervals <- data.frame()
+
+# Recorrer todos los modelos
+for(i in 1:length(modelos)){
+  ci <- confint(modelos[[i]])
+  signif_param <- ifelse(ci[,1] > 0 | ci[,2] < 0, "Significativo", "No significativo")
+  df <- data.frame(
+    Modelo = nombres[i],
+    Parametro = rownames(ci),
+    Lower = ci[,1],
+    Upper = ci[,2],
+    Significancia = signif_param
+  )
+  tabla_intervals <- rbind(tabla_intervals, df)
+}
+```
+
+```{r}
+# Ver tabla completa
+print(tabla_intervals)
+```
+
+Ajustamos 4 modelos, uno utilizando auto.arima que nos arrojó que el
+mejor modelo es ARIMA(1,0,1)(0,1,1)[12], otro candidato fue un
+SARIMA(0,1,1)(0,1,1)[12], otro SARIMA(1,1,0)(0,1,1)[12] y por último
+SARIMA(0,1,1)(1,1,0)[12]. También analizamos los intervalos de confianza
+de los parámetros de cada modelo para ver si son significantes o no y
+notamos que para todos los modelos los parámetros son significantes.
+
+```{r}
+library(broom)
+
+# Función para resumir un modelo ARIMA/SARIMA
+resume_model <- function(fit, name){
+  # Box-Ljung (lag 12 por ejemplo)
+  box <- Box.test(fit$residuals, lag=12, type="Ljung")
+  # Normalidad (Anderson-Darling)
+  norm <- nortest::ad.test(fit$residuals)
+  # Homocedasticidad
+  bp <- lmtest::bptest(as.numeric(fit$residuals) ~ seq_along(fit$residuals))
+  
+  data.frame(
+    Modelo = name,
+    AIC = AIC(fit),
+    BIC = BIC(fit),
+    logLik = as.numeric(logLik(fit)),
+    LjungBox_p = box$p.value,
+    Normalidad_p = norm$p.value,
+    BP_p = bp$p.value
+  )
+}
+# Resumir todos los modelos
+tabla_modelos <- rbind(
+  resume_model(fit0, "auto.arima"),
+  resume_model(fit1, "SARIMA(0,1,1)(0,1,1)[12]"),
+  resume_model(fit2, "SARIMA(1,1,0)(0,1,1)[12]"),
+  resume_model(fit3, "SARIMA(0,1,1)(1,1,0)[12]")
+)
+```
+
+```{r}
+print(tabla_modelos)
+```
+
+Para elegir al mejor modelo vamos a elegir al que tenga menor AIC y BIC,
+en este caso notamos que el que tiene menor AIC es el modelo que arrojó
+el auto.arima que es el SARIMA(1,0,1)(0,1,1)[12] y el que tiene menor
+BIC es el modelo SARIMA(0,1,1)(0,1,1). En conjunto, el modelo 1 tiene
+mejor ajuste general (menor AIC, mejor logLik y mejores supuestos de
+normalidad y homocedasticidad). El modelo 2 mejora un poco la
+independencia de los residuos, pero al costo de perder normalidad.
+
+Por lo tanto nos quedamos con el primer modelo que es que nos arrojó el
+auto.arima que es un ARIMA(1,0,1)(0,1,1)[12].Ya vimos que pasó unas
+pruebas de normalidad y homocedasticidad, sin embargo, vamos a realizar
+más pues hay unas que se fijan más en las colas, etc.
+
+```{r fig.width=10, fig.height=4, fig.align='center', out.width='100%'}
+library("car")
+# --- Función para diagnóstico de residuales ---
+check_residuals_custom <- function(fit, name = "Modelo") {
+  cat("\n============================\n")
+  cat("Modelo:", name, "\n")
+  cat("============================\n")
+  
+  # Correlograma de residuales
+  tsdisplay(fit$residuals, main=paste("Correlograma Residuales -", name))
+  
+  # Box-Ljung test (independencia)
+  print(Box.test(fit$residuals, lag=12, type="Ljung"))
+  
+  # Normalidad
+  qqnorm(fit$residuals); qqline(fit$residuals, col="red")
+  print(ad.test(fit$residuals))
+  
+  # Homocedasticidad
+  Y <- as.numeric(fit$residuals)
+  X <- 1:length(Y)
+  print(bptest(Y ~ X))
+  print(ncvTest(lm(Y ~ X)))
+  
+  # Estacionariedad de residuales
+  print(adf.test(fit$residuals))
+  
+  # Bondad de ajuste
+  cat("AIC:", AIC(fit), "  BIC:", BIC(fit), "  logLik:", logLik(fit), "\n")
+}
+```
+
+```{r}
+# --- Análisis de residuales y comparación ---
+check_residuals_custom(fit0, "auto.arima")
+```
+
+En el qqplot notamos que en el centro la mayoría de puntos se ajusta a
+la línea roja, en la cola de la lado izquierdo hay puntos que se alejan
+más y en la cola de lado derecho están más pegados, sin embargo, se ve
+que si siguen una distribución normal.
+
+En la prueba Box-Ljung test obtuvimos que el p-value = 0.085 \> 0.05 por
+lo tanto no rechazamos H0 y se concluye que los residuales se comportan
+como ruido blanco ya que no hay autocorrelación significativa.
+
+En la prueba de Anderson-Darling obtuvimos que el p-value = 0.1901 \>
+0.05 por lo tanto no rechazamos H0 y concluimos que los residuales se
+distribuyen normal.
+
+En la prueba de Breusch-Pagan y NCV test obtuvimos que ambos p-values
+(0.4598 y 0.4198) \> 0.05 por lo tanto no hay evidencia de
+heterocedasticidad y asumimos que tenemos varianza constante.
+
+En la prueba ADF test obtivimos que p-value = 0.01 \< 0.05 por lo tanto
+rechazamos H0 y concluimos que los residuos son estacionarios.
+
+En el correlograma de los residuos, se observa que las autocorrelaciones
+y autocorrelaciones parciales se encuentran dentro de los límites de
+confianza, sin patrones sistemáticos aparentes. Esto indica que los
+residuos se comportan como un proceso de ruido blanco, cumpliendo con el
+supuesto de independencia. En consecuencia, se puede concluir que el
+modelo ajusta adecuadamente la estructura temporal de la serie y no deja
+información relevante sin modelar.
+
+Concluimos que el mejor modelo que se ajusta a la serie es
+ARIMA(1,0,1)(0,1,1)[12].
+
+# **Pronósticos**
+
+Para esta parte de predicción primero definamos nuestro conjunto de
+entrenamiento el cual serán todos los datos menos el ultimo año, para
+posteriormente compararlas predicciones de nuestro modelo y ver si son
+adecuadas
+
+```{r}
+n_total <- length(log_xt)
+freq_xt <- frequency(log_xt)
+n_test <- freq_xt  # 12 meses
+
+Xt_train <- window(log_xt, end = time(log_xt)[n_total - n_test])
+Xt_test  <- window(log_xt, start = time(log_xt)[n_total - n_test + 1])
+
+fit_train <- arima(Xt_train, order = c(1,0,1),
+                   seasonal = list(order = c(0,1,1), period = 12))
+
+forecast_test <- forecast(fit_train, h = n_test, level = 95)
+```
+
+Para ello usemos como referencia los valores de
+
+-   RMSE es el error cuadrático medio en raíz
+
+-   MSE es el error cuadrático medio
+
+-   MAE es el error absoluto medio
+
+-   Y el MAPE es el porcentaje de error promedio
+
+```{r}
+real_values <- as.numeric(Xt_test)
+pred_values <- as.numeric(forecast_test$mean)
+
+MAE  <- mean(abs(real_values - pred_values))
+RMSE <- sqrt(mean((real_values - pred_values)^2))
+MSE <- (mean((real_values - pred_values)^2))
+MAPE <- mean(abs((real_values - pred_values) / real_values)) * 100
+
+errores <- data.frame(MAE, RMSE,MSE, MAPE)
+print(errores)
+```
+
+Los cuales observamos que son valores pequeños por lo que podríamos
+decir que nuestro modelo es adecuado para predecir y por último viéndolo
+de manera gráfica, considerando intervalos de 95%
+
+```{r}
+library(zoo)
+
+df_train <- data.frame(
+  Fecha = as.yearmon(time(Xt_train)),  # convierte a formato año-mes
+  Valor = as.numeric(Xt_train),
+  Tipo = "Entrenamiento"
+)
+
+df_test <- data.frame(
+  Fecha = as.yearmon(time(Xt_test)),
+  Valor = as.numeric(Xt_test),
+  Tipo = "Observado"
+)
+
+df_pred <- data.frame(
+  Fecha = as.yearmon(time(forecast_test$mean)),
+  Valor = as.numeric(forecast_test$mean),
+  LI = as.numeric(forecast_test$lower),  # solo una columna
+  LS = as.numeric(forecast_test$upper),  # solo una columna
+  Tipo = "Pronóstico"
+)
+
+ggplot() +
+  geom_line(data = df_train, aes(x = Fecha, y = Valor, color = Tipo), linewidth = 0.6) +
+  geom_line(data = df_test, aes(x = Fecha, y = Valor, color = Tipo), linewidth = 0.8) +
+  geom_line(data = df_pred, aes(x = Fecha, y = Valor, color = Tipo), linewidth = 0.8) +
+  geom_ribbon(data = df_pred, aes(x = Fecha, ymin = LI, ymax = LS), 
+              alpha = 0.2, fill = "red", inherit.aes = FALSE) +
+  labs(
+    title = "Validación: pronóstico del último año con intervalos de confianza (95%)",
+    x = "Tiempo", y = "Log(Pasajeros)"
+  ) +
+  scale_color_manual(values = c("Entrenamiento" = "gray40", "Observado" = "black", "Pronóstico" = "red")) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+
+```
+
+Por lo tanto, usemos nuestro modelo para predecir un año mas de los
+datos que tenemos.
+
+```{r}
+fit_full <- arima(log_xt, order = c(1,0,1),
+                  seasonal = list(order = c(0,1,1), period = 12))
+
+forecast_future <- forecast(fit_full, h = 12)
+
+df_hist_exp <- data.frame(
+  Fecha = time(log_xt),
+  Valor = exp(as.numeric(log_xt)),
+  Tipo = "Datos históricos"
+)
+
+df_pred_exp <- data.frame(
+  Fecha = time(forecast_future$mean),
+  Valor = exp(as.numeric(forecast_future$mean)),
+  LI = exp(as.numeric(forecast_future$lower[,2])),
+  LS = exp(as.numeric(forecast_future$upper[,2])),
+  Tipo = "Pronóstico"
+)
+
+ggplot() +
+  geom_line(data = df_hist_exp, aes(x = Fecha, y = Valor, color = Tipo), linewidth = 0.6) +
+  geom_line(data = df_pred_exp, aes(x = Fecha, y = Valor, color = Tipo), linewidth = 0.8) +
+  geom_ribbon(data = df_pred_exp, aes(x = Fecha, ymin = LI, ymax = LS),
+              alpha = 0.2, fill = "red", inherit.aes = FALSE) +
+  labs(
+    title = "Pronóstico para el proximo año (escala original)",
+    x = "Tiempo", y = "Pasajeros"
+  ) +
+  scale_color_manual(values = c("Datos históricos" = "black", "Pronóstico" = "red")) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
