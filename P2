@@ -1,0 +1,203 @@
+# ============================================================
+# Dashboard Interactivo de Stress Testing Financiero
+# Autor: Hernandez Damian Josue Valdemar
+# Descripción:
+# Simula escenarios de estrés sobre un portafolio de activos
+# utilizando precios históricos obtenidos desde Yahoo Finance.
+# ============================================================
+
+# pip install streamlit yfinance plotly pandas numpy
+
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import plotly.graph_objects as go
+import numpy as np
+
+# ------------------------------------------------------------
+# Configuración de la página
+# ------------------------------------------------------------
+st.set_page_config(
+    page_title="Simulador de Estrés Financiero",
+    page_icon="📉",
+    layout="wide"
+)
+
+st.title("📉 Simulador de Estrés Financiero")
+st.markdown(
+    """
+    Analiza el impacto de escenarios adversos sobre un portafolio de inversión
+    utilizando datos de mercado en tiempo real.
+    """
+)
+
+# ------------------------------------------------------------
+# Sidebar
+# ------------------------------------------------------------
+st.sidebar.header("⚙️ Parámetros")
+
+tickers_input = st.sidebar.text_input(
+    "Tickers (separados por coma)",
+    value="AAPL,MSFT,GOOGL"
+)
+
+stress_pct = st.sidebar.slider(
+    "Caída del mercado (%)",
+    min_value=0,
+    max_value=80,
+    value=20,
+    step=1
+)
+
+period = st.sidebar.selectbox(
+    "Periodo histórico",
+    options=["6mo", "1y", "2y", "5y"],
+    index=1
+)
+
+# ------------------------------------------------------------
+# Procesamiento de tickers
+# ------------------------------------------------------------
+tickers = [
+    ticker.strip().upper()
+    for ticker in tickers_input.split(",")
+    if ticker.strip()
+]
+
+if not tickers:
+    st.warning("Por favor, ingresa al menos un ticker.")
+    st.stop()
+
+# ------------------------------------------------------------
+# Descarga de datos
+# ------------------------------------------------------------
+@st.cache_data(ttl=3600)
+def load_data(symbols, period):
+    data = yf.download(
+        symbols,
+        period=period,
+        auto_adjust=True,
+        progress=False
+    )["Close"]
+
+    if isinstance(data, pd.Series):
+        data = data.to_frame()
+
+    return data.dropna()
+
+try:
+    prices = load_data(tickers, period)
+
+    if prices.empty:
+        st.error("No se pudieron obtener datos para los tickers seleccionados.")
+        st.stop()
+
+except Exception as e:
+    st.error(f"Error al descargar datos: {e}")
+    st.stop()
+
+# ------------------------------------------------------------
+# Cálculos
+# ------------------------------------------------------------
+current_prices = prices.iloc[-1]
+stressed_prices = current_prices * (1 - stress_pct / 100)
+losses = current_prices - stressed_prices
+loss_pct = (losses / current_prices) * 100
+
+results = pd.DataFrame({
+    "Precio Actual": current_prices,
+    "Precio Bajo Estrés": stressed_prices,
+    "Pérdida Absoluta": losses,
+    "Pérdida (%)": loss_pct
+}).round(2)
+
+# ------------------------------------------------------------
+# Métricas agregadas
+# ------------------------------------------------------------
+portfolio_current = current_prices.sum()
+portfolio_stressed = stressed_prices.sum()
+portfolio_loss = portfolio_current - portfolio_stressed
+
+col1, col2, col3 = st.columns(3)
+
+col1.metric(
+    "Valor Actual del Portafolio",
+    f"${portfolio_current:,.2f}"
+)
+
+col2.metric(
+    "Valor Bajo Estrés",
+    f"${portfolio_stressed:,.2f}"
+)
+
+col3.metric(
+    "Pérdida Estimada",
+    f"${portfolio_loss:,.2f}",
+    delta=f"-{stress_pct:.1f}%"
+)
+
+# ------------------------------------------------------------
+# Tabla de resultados
+# ------------------------------------------------------------
+st.subheader("📋 Resumen por Activo")
+st.dataframe(
+    results,
+    use_container_width=True
+)
+
+# ------------------------------------------------------------
+# Gráfica comparativa
+# ------------------------------------------------------------
+fig = go.Figure()
+
+fig.add_trace(go.Bar(
+    name="Actual",
+    x=results.index,
+    y=results["Precio Actual"]
+))
+
+fig.add_trace(go.Bar(
+    name="Bajo Estrés",
+    x=results.index,
+    y=results["Precio Bajo Estrés"]
+))
+
+fig.update_layout(
+    title=f"Impacto de una caída del {stress_pct}%",
+    xaxis_title="Activo",
+    yaxis_title="Precio",
+    barmode="group",
+    template="plotly_white",
+    height=550
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+# ------------------------------------------------------------
+# Serie histórica
+# ------------------------------------------------------------
+st.subheader("📈 Evolución Histórica")
+
+normalized_prices = prices / prices.iloc[0] * 100
+
+st.line_chart(normalized_prices)
+
+# ------------------------------------------------------------
+# Interpretación automática
+# ------------------------------------------------------------
+st.subheader("🧠 Interpretación")
+
+worst_asset = results["Pérdida Absoluta"].idxmax()
+
+st.info(
+    f"""
+    Bajo un escenario de estrés del **{stress_pct}%**,
+    el portafolio perdería aproximadamente **${portfolio_loss:,.2f}**.
+
+    El activo con mayor impacto absoluto sería **{worst_asset}**.
+    """
+)
+
+st.caption(
+    "Fuente de datos: Yahoo Finance | Modelo de estrés lineal simplificado"
+)
